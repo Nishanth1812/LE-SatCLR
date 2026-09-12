@@ -57,7 +57,7 @@ MLflow logging alongside the file logs.
 
 All Modal functions use L40S GPUs. Omit `--epochs`/`--batch-size` to use
 per-stage defaults: SimCLR 100/128, probe 50/64, fine-tune 75/64,
-baseline 100/64. Add `--detach` to close your laptop mid-run.
+baseline 75/64. Add `--detach` to close your laptop mid-run.
 
 ```powershell
 uv run modal run --detach modal_app.py --stage simclr

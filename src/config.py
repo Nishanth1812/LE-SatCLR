@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 
-STAGE_EPOCHS = {'simclr': 100, 'probe': 50, 'finetune': 75, 'baseline': 100}
+STAGE_EPOCHS = {'simclr': 100, 'probe': 50, 'finetune': 75, 'baseline': 75}
 STAGE_BATCH_SIZE = {'simclr': 128, 'probe': 64, 'finetune': 64, 'baseline': 64}
 
 
