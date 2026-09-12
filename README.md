@@ -125,6 +125,23 @@ SSL validation reports label-free pair retrieval accuracy, not class accuracy.
 Checkpoint loading supports downstream initialization and inference; exact
 interrupted-training resume is not yet exposed as a command.
 
+## Dashboard (backend + frontend)
+
+The backend serves the trained classifier and the built React frontend from one
+process. It needs `Dataset/EuroSAT_RGB`, `outputs/results/splits_seed42.json`
+and a classifier checkpoint under `outputs/models/` (newest `*.pt` wins, or set
+`LE_SATCLR_CHECKPOINT` to override).
+
+```powershell
+uv run python -m src.dashboard
+```
+
+Open http://127.0.0.1:8000 — status, evaluation jobs (accuracy/precision/recall/F1,
+confusion matrix, per-class recall, sample predictions with confidence) and
+test-split image serving live there. Only images in the saved test split are
+served; everything else 404s. To rebuild the frontend: `npm --prefix web install`
+then `npm --prefix web run build`.
+
 ## Reporting
 
 After retrieving outputs, run:
