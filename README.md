@@ -142,6 +142,14 @@ test-split image serving live there. Only images in the saved test split are
 served; everything else 404s. To rebuild the frontend: `npm --prefix web install`
 then `npm --prefix web run build`.
 
+## One-command inference
+
+```powershell
+uv run python -m src.infer --image Dataset/EuroSAT_RGB/SeaLake/SeaLake_1.jpg --checkpoint outputs/models/finetune_10pct_best.pt
+```
+
+Omit `--checkpoint` to use the newest `*.pt` under `outputs/models/`.
+
 ## Reporting
 
 After retrieving outputs, run:
