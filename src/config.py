@@ -1,10 +1,26 @@
 from dataclasses import dataclass
 
 
+STAGE_EPOCHS = {'simclr': 200, 'probe': 50, 'finetune': 75, 'baseline': 100}
+STAGE_BATCH_SIZE = {'simclr': 128, 'probe': 64, 'finetune': 64, 'baseline': 64}
+
+
+def resolve_epochs(stage, epochs):
+    if epochs in (None, 0):
+        return STAGE_EPOCHS[stage]
+    return epochs
+
+
+def resolve_batch_size(stage, batch_size):
+    if batch_size in (None, 0):
+        return STAGE_BATCH_SIZE[stage]
+    return batch_size
+
+
 @dataclass
 class Config:
     stage: str = 'simclr'
-    epochs: int = 100
+    epochs: int = 200
     batch_size: int = 128
     label_percent: int = 1
     policy: str = 'standard'

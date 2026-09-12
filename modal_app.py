@@ -28,7 +28,7 @@ image = modal.Image.debian_slim(python_version="3.12").uv_pip_install(
 
 @app.function(
     image=image,
-    gpu="A10G",
+    gpu="L40S",
     timeout=10 * 60,
     secrets=[mlflow_secret],
     volumes={VOLUME_PATH: data_volume, OUTPUT_PATH: output_volume},
@@ -70,7 +70,7 @@ def smoke_test():
 
 
 @app.local_entrypoint()
-def main(stage: str = 'setup', epochs: int = 100, batch_size: int = 128,
+def main(stage: str = 'setup', epochs: int = 0, batch_size: int = 0,
          label_percent: int = 1, encoder_checkpoint: str = '', max_batches: int = 0,
          policy: str = 'standard', ssl_scope: str = 'all', isolated_tracking: bool = False):
     if stage == 'setup':
@@ -79,10 +79,11 @@ def main(stage: str = 'setup', epochs: int = 100, batch_size: int = 128,
         train_remote.remote(stage,epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope,isolated_tracking)
 
 
-@app.function(image=image, gpu='A10G', timeout=5*60*60, secrets=[mlflow_secret],
+@app.function(image=image, gpu='L40S', timeout=5*60*60, secrets=[mlflow_secret],
               volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
 def downstream_remote(epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope,isolated_tracking=False):
     """Run probe, finetune and baseline for one label budget from the same SSL checkpoint."""
+    from src.config import resolve_batch_size, resolve_epochs
     if label_percent not in (1,10):
         raise ValueError('Label budget must be 1 or 10')
     if not encoder_checkpoint:
@@ -90,18 +91,22 @@ def downstream_remote(epochs,batch_size,label_percent,encoder_checkpoint,max_bat
     results = []
     for stage in ('probe','finetune','baseline'):
         checkpoint = encoder_checkpoint if stage != 'baseline' else ''
-        results.append(train_remote.local(stage,epochs,batch_size,label_percent,checkpoint,
+        stage_epochs = epochs if epochs not in (None,0) else resolve_epochs(stage,None)
+        stage_batch = batch_size if batch_size not in (None,0) else resolve_batch_size(stage,None)
+        results.append(train_remote.local(stage,stage_epochs,stage_batch,label_percent,checkpoint,
                                           max_batches,policy,ssl_scope,isolated_tracking))
     return results
 
 
-@app.function(image=image, gpu='A10G', timeout=5*60*60, secrets=[mlflow_secret],
+@app.function(image=image, gpu='L40S', timeout=5*60*60, secrets=[mlflow_secret],
               volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
 def train_remote(stage,epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope,isolated_tracking=False):
     from pathlib import Path
     import zipfile
-    from src.config import Config
+    from src.config import Config, resolve_batch_size, resolve_epochs
     from src.training import train
+    epochs = resolve_epochs(stage,epochs)
+    batch_size = resolve_batch_size(stage,batch_size)
     if isolated_tracking and not max_batches:
         raise ValueError('Isolated tracking is only allowed for smoke tests')
     data_root = Path(VOLUME_PATH)/'eurosat'
