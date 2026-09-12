@@ -103,6 +103,38 @@ class DashboardService:
             },
         }
 
+    def checkpoints(self):
+        infos = []
+        for directory in (self.model_dirs or [self.root / "outputs/models",
+                                              self.root / "mlartifacts"]):
+            directory = Path(directory)
+            if not directory.is_dir():
+                continue
+            for path in directory.rglob("*.pt"):
+                info = _checkpoint_info(path)
+                if info:
+                    infos.append({
+                        "name": path.name,
+                        "path": str(path.resolve()),
+                        "stage": info["config"]["stage"],
+                        "labelPercent": info["config"].get("label_percent"),
+                        "epoch": info.get("epoch"),
+                        "score": info.get("score"),
+                    })
+        infos.sort(key=lambda item: (item["labelPercent"] or 0, item["stage"], item["name"]))
+        return infos
+
+    def _resolve_checkpoint(self, name):
+        if not name:
+            return discover_checkpoint(self.root, self.checkpoint_override, self.model_dirs)
+        for info in self.checkpoints():
+            if info["name"] == name:
+                return Path(info["path"])
+        override = self.checkpoint_override and Path(self.checkpoint_override)
+        if override and override.name == name and _checkpoint_info(override):
+            return override.resolve()
+        return None
+
     def test_image(self, index):
         if index not in set(self._test_indices()):
             raise PermissionError("Image is not in the saved test split")
@@ -111,13 +143,16 @@ class DashboardService:
             raise IndexError("Dataset index is out of range")
         return Path(dataset.samples[index][0])
 
-    def start(self, sample_limit=0):
+    def start(self, sample_limit=0, checkpoint=None):
         status = self.status()
         if not status["ready"]:
             raise RuntimeError(status["message"])
         total = status["testSamples"]
         if sample_limit < 0 or sample_limit > total:
             raise ValueError(f"sampleLimit must be between 0 and {total}")
+        resolved = self._resolve_checkpoint(checkpoint)
+        if not resolved or not _checkpoint_info(resolved):
+            raise ValueError("Unknown checkpoint. Pick one from the model list.")
         total = sample_limit or total
         with self._lock:
             if self._job["state"] == "running":
@@ -126,17 +161,18 @@ class DashboardService:
                 "state": "running",
                 "startedAt": datetime.now(UTC).isoformat(),
                 "progress": {"done": 0, "total": total},
+                "checkpoint": Path(resolved).name,
             }
-        threading.Thread(target=self._run, args=(sample_limit,), daemon=True).start()
+        threading.Thread(target=self._run, args=(sample_limit, str(resolved)), daemon=True).start()
         return self.current()
 
     def current(self):
         with self._lock:
             return json.loads(json.dumps(self._job))
 
-    def _run(self, sample_limit):
+    def _run(self, sample_limit, checkpoint):
         try:
-            result = self._evaluate(sample_limit)
+            result = self._evaluate(sample_limit, checkpoint)
             with self._lock:
                 self._job.update(state="complete", result=result,
                                  completedAt=datetime.now(UTC).isoformat())
@@ -146,13 +182,14 @@ class DashboardService:
                 self._job.update(state="failed", error="Evaluation failed. Check the server log.",
                                  completedAt=datetime.now(UTC).isoformat())
 
-    def _evaluate(self, sample_limit):
+    def _evaluate(self, sample_limit, checkpoint=None):
         started = time.monotonic()
         dataset = catalog(self.data_root)
         indices = self._test_indices()
         if sample_limit:
             indices = indices[:sample_limit]
-        checkpoint = discover_checkpoint(self.root, self.checkpoint_override, self.model_dirs)
+        checkpoint = Path(checkpoint) if checkpoint else discover_checkpoint(
+            self.root, self.checkpoint_override, self.model_dirs)
         state = _checkpoint_info(checkpoint)
         if not state:
             raise RuntimeError("No compatible classifier checkpoint")
@@ -188,6 +225,7 @@ class DashboardService:
         supports = matrix.sum(axis=1)
         return {
             "sampleCount": len(indices),
+            "checkpoint": Path(checkpoint).name,
             "durationSeconds": round(time.monotonic() - started, 2),
             "metrics": {
                 "accuracy": accuracy_score(actual, predicted),
@@ -208,6 +246,7 @@ class DashboardService:
 
 class EvaluationRequest(BaseModel):
     sampleLimit: int = Field(default=0, ge=0)
+    checkpoint: str | None = Field(default=None)
 
 
 def create_app(service, web_dist=None):
@@ -228,10 +267,14 @@ def create_app(service, web_dist=None):
     def get_status():
         return service.status()
 
+    @dashboard.get("/api/checkpoints")
+    def list_checkpoints():
+        return service.checkpoints()
+
     @dashboard.post("/api/evaluations", status_code=202)
     def start_evaluation(request: EvaluationRequest):
         try:
-            return service.start(request.sampleLimit)
+            return service.start(request.sampleLimit, request.checkpoint)
         except ValueError as error:
             raise HTTPException(422, str(error)) from None
         except RuntimeError as error:

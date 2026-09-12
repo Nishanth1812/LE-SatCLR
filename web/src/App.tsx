@@ -11,8 +11,17 @@ type Status = {
   checkpoint: null | { name: string; stage: string; epoch: number | null; score: number | null };
 };
 
+type Checkpoint = {
+  name: string;
+  stage: string;
+  labelPercent: number | null;
+  epoch: number | null;
+  score: number | null;
+};
+
 type Result = {
   sampleCount: number;
+  checkpoint: string;
   durationSeconds: number;
   metrics: { accuracy: number; precision: number; recall: number; macroF1: number };
   classes: string[];
@@ -73,12 +82,14 @@ export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [job, setJob] = useState<Job>({ state: "idle", progress: { done: 0, total: 0 } });
   const [sampleLimit, setSampleLimit] = useState(100);
+  const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
+  const [selectedCheckpoint, setSelectedCheckpoint] = useState("");
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    Promise.all([api<Status>("/api/status"), api<Job>("/api/evaluations/current")])
-      .then(([nextStatus, nextJob]) => { setStatus(nextStatus); setJob(nextJob); })
+    Promise.all([api<Status>("/api/status"), api<Job>("/api/evaluations/current"), api<Checkpoint[]>("/api/checkpoints")])
+      .then(([nextStatus, nextJob, nextCheckpoints]) => { setStatus(nextStatus); setJob(nextJob); setCheckpoints(nextCheckpoints); })
       .catch((reason) => setError(reason.message));
   }, []);
 
@@ -101,7 +112,7 @@ export default function App() {
       setJob(await api<Job>("/api/evaluations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sampleLimit }),
+        body: JSON.stringify({ sampleLimit, checkpoint: selectedCheckpoint || null }),
       }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not start evaluation.");
@@ -142,9 +153,16 @@ export default function App() {
               <div><dt>Training stage</dt><dd>{status?.checkpoint?.stage || "—"}</dd></div>
               <div><dt>Test samples</dt><dd>{status?.testSamples?.toLocaleString() || "—"}</dd></div>
             </dl>
+            <div className="control-label"><label htmlFor="model-pick">Model</label><span>1% vs 10% labels</span></div>
+            <select id="model-pick" value={selectedCheckpoint} onChange={(event) => setSelectedCheckpoint(event.target.value)} disabled={job.state === "running"}>
+              <option value="">Newest model (auto)</option>
+              {checkpoints.map((item) => <option key={item.name} value={item.name}>
+                {item.stage} · {item.labelPercent === null ? "labels n/a" : `${item.labelPercent}% labels`} ({item.name})
+              </option>)}
+            </select>
             <div className="control-label"><label htmlFor="sample-limit">Evaluation size</label><span>Real test images only</span></div>
             <select id="sample-limit" value={sampleLimit} onChange={(event) => setSampleLimit(Number(event.target.value))} disabled={job.state === "running"}>
-              <option value={0}>Full test split</option>
+              <option value={0}>Full test split · 2,700 images</option>
               <option value={100}>Quick check · 100 images</option>
               <option value={500}>Extended check · 500 images</option>
             </select>
@@ -158,7 +176,7 @@ export default function App() {
         </section>
 
         {result ? <section className="results" aria-live="polite">
-          <div className="section-heading"><div><p className="eyebrow">LATEST RUN</p><h2>Test performance</h2><p className="section-summary">A measured view of how the classifier behaves beyond its training data.</p></div><p>{result.sampleCount.toLocaleString()} images · {formatDuration(result.durationSeconds)}</p></div>
+          <div className="section-heading"><div><p className="eyebrow">LATEST RUN · {result.checkpoint}</p><h2>Test performance</h2><p className="section-summary">Accuracy is the share of test images the model labeled correctly — higher is better. Compare the 1% and 10% models to see what extra labels buy.</p></div><p>{result.sampleCount.toLocaleString()} images · {formatDuration(result.durationSeconds)}</p></div>
           <div className="metrics-row"><Metric label="Accuracy" value={result.metrics.accuracy} lead /><Metric label="Macro F1" value={result.metrics.macroF1} /><Metric label="Precision" value={result.metrics.precision} /><Metric label="Recall" value={result.metrics.recall} /></div>
 
           <div className="analysis-grid">
