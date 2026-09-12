@@ -46,10 +46,12 @@ uv run python -m src.dashboard
 Then open `http://127.0.0.1:8000`. The interface reports exactly which of the
 dataset, saved split, or final checkpoint is missing if it cannot start a run.
 
-The existing Modal Secret `le-satclr-mlflow` supplies `MLFLOW_TRACKING_URI`.
-Keep the MLflow server and Cloudflare tunnel running. The data Volume is
+No experiment server is required. Training logs to the console and
+`results/<experiment>/<run_id>/training.log`; metrics, history, summaries and
+checkpoints persist in the outputs Volume. The data Volume is
 `le-satclr-data` at `/vol`; the outputs Volume is `le-satclr-outputs` at `/outputs`.
-Local runs accept `--tracking-uri` (HTTP server or SQLite URI).
+Pass `--tracking-uri` (HTTP server or SQLite URI) only if you want optional
+MLflow logging alongside the file logs.
 
 ## Training
 
@@ -112,8 +114,9 @@ bitwise equivalence across hardware, library versions, or platforms.
 ## Outputs and logging
 
 `results/<experiment>/<run_id>/` holds timestamped elapsed-time JSON console/file
-logs, history, summary, and confusion matrix CSV. MLflow receives parameters,
-per-epoch metrics, results, and the best checkpoint. Exceptions propagate and
+logs, history, summary, and confusion matrix CSV. If `--tracking-uri` is given,
+the same parameters, per-epoch metrics, results, and best checkpoint also go to
+MLflow. Exceptions propagate and
 are recorded in the persisted log. Volumes commit after each epoch and on exit.
 `models/<experiment>/<run_id>/<experiment>_best.pt` prevents rerun collisions;
 it includes model/encoder weights, optimizer, scheduler, scaler, epoch and config.

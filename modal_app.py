@@ -11,12 +11,10 @@ OUTPUT_PATH = "/outputs"
 RESULTS_PATH = f"{OUTPUT_PATH}/results"
 MODELS_PATH = f"{OUTPUT_PATH}/models"
 MODEL_NAME_TEMPLATE = "{experiment}_seed42_best.pt"
-MLFLOW_SECRET_NAME = "le-satclr-mlflow"
 
 app = modal.App(APP_NAME)
 data_volume = modal.Volume.from_name(VOLUME_NAME)
 output_volume = modal.Volume.from_name(OUTPUT_VOLUME_NAME)
-mlflow_secret = modal.Secret.from_name(MLFLOW_SECRET_NAME)
 image = modal.Image.debian_slim(python_version="3.12").uv_pip_install(
     "torch==2.14.0",
     "numpy==2.5.3",
@@ -30,14 +28,11 @@ image = modal.Image.debian_slim(python_version="3.12").uv_pip_install(
     image=image,
     gpu="L40S",
     timeout=10 * 60,
-    secrets=[mlflow_secret],
     volumes={VOLUME_PATH: data_volume, OUTPUT_PATH: output_volume},
 )
 def smoke_test():
-    import os
     import pathlib
 
-    import mlflow
     import torch
 
     pathlib.Path(VOLUME_PATH).mkdir(parents=True, exist_ok=True)
@@ -55,19 +50,6 @@ def smoke_test():
     if torch.cuda.is_available():
         print(f"gpu: {torch.cuda.get_device_name(0)}")
 
-    tracking_uri = os.environ["MLFLOW_TRACKING_URI"].rstrip("/")
-    mlflow.set_tracking_uri(tracking_uri)
-    mlflow.set_experiment("le-satclr-setup")
-    artifact_path = pathlib.Path("/tmp/mlflow_smoke_test.txt")
-    artifact_path.write_text("Modal can log artifacts to MLflow.\n", encoding="utf-8")
-
-    with mlflow.start_run(run_name="modal_smoke_test") as run:
-        mlflow.log_params({"seed": 42, "stage": "modal_setup"})
-        mlflow.log_metric("cuda_available", float(torch.cuda.is_available()))
-        mlflow.log_artifact(str(artifact_path))
-        print(f"mlflow tracking URI: {tracking_uri}")
-        print(f"mlflow run ID: {run.info.run_id}")
-
 
 @app.local_entrypoint()
 def main(stage: str = 'setup', epochs: int = 0, batch_size: int = 0,
@@ -79,7 +61,7 @@ def main(stage: str = 'setup', epochs: int = 0, batch_size: int = 0,
         train_remote.remote(stage,epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope,isolated_tracking)
 
 
-@app.function(image=image, gpu='L40S', timeout=5*60*60, secrets=[mlflow_secret],
+@app.function(image=image, gpu='L40S', timeout=5*60*60,
               volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
 def downstream_remote(epochs: int, batch_size: int, label_percent: int, encoder_checkpoint: str,
                       max_batches: int, policy: str, ssl_scope: str, isolated_tracking: bool = False):
@@ -101,7 +83,7 @@ def downstream_remote(epochs: int, batch_size: int, label_percent: int, encoder_
     return results
 
 
-@app.function(image=image, gpu='L40S', timeout=5*60*60, secrets=[mlflow_secret],
+@app.function(image=image, gpu='L40S', timeout=5*60*60,
               volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
 def train_remote(stage: str, epochs: int, batch_size: int, label_percent: int, encoder_checkpoint: str,
                  max_batches: int, policy: str, ssl_scope: str, isolated_tracking: bool = False):

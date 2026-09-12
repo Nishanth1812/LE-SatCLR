@@ -4,10 +4,15 @@ import os
 import time
 import uuid
 import traceback
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
+from types import SimpleNamespace
 
-import mlflow
+try:
+    import mlflow
+except ImportError:
+    mlflow = None
 import numpy as np
 import torch
 from torch import nn
@@ -64,19 +69,29 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
                                  elapsed_seconds=round(time.monotonic()-start,2),**fields)))
 
     try:
-        os.environ.setdefault('MLFLOW_HTTP_REQUEST_TIMEOUT','15')
-        os.environ.setdefault('MLFLOW_HTTP_REQUEST_MAX_RETRIES','1')
-        event('tracking_connecting')
-        mlflow.set_tracking_uri(tracking_uri or os.environ['MLFLOW_TRACKING_URI'])
-        mlflow.set_experiment('le-satclr')
-        with mlflow.start_run(run_name=name) as run:
-            mlflow.log_params(asdict(config))
-            mlflow.set_tags({'local_run_id':identifier,
+        tracking = tracking_uri or os.environ.get('MLFLOW_TRACKING_URI')
+        use_mlflow = mlflow is not None and bool(tracking)
+
+        @contextmanager
+        def _maybe_run():
+            if use_mlflow:
+                mlflow.set_tracking_uri(tracking)
+                mlflow.set_experiment('le-satclr')
+                with mlflow.start_run(run_name=name) as run:
+                    yield run
+            else:
+                yield SimpleNamespace(info=SimpleNamespace(run_id=None))
+
+        event('tracking_connecting',mlflow=use_mlflow)
+        with _maybe_run() as run:
+            run_id = run.info.run_id or identifier
+            if use_mlflow: mlflow.log_params(asdict(config))
+            if use_mlflow: mlflow.set_tags({'local_run_id':identifier,
                              'protocol':'transductive' if config.ssl_scope=='all' else 'inductive'})
-            event('run_started',mlflow_run_id=run.info.run_id,device=str(device))
+            event('run_started',mlflow_run_id=run_id,device=str(device))
             dataset = catalog(data_root)
             split = splits(dataset, root/'results'/'splits_seed42.json')
-            mlflow.log_artifact(str(root/'results'/'splits_seed42.json'))
+            if use_mlflow: mlflow.log_artifact(str(root/'results'/'splits_seed42.json'))
             paired = config.stage == 'simclr'
             indices = (list(range(len(dataset))) if config.ssl_scope=='all' else split['train']) if paired else split[f'labels{config.label_percent}']
             batches = loader(dataset,indices,config.batch_size,True,paired,config.policy,config.workers)
@@ -91,7 +106,7 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
                 if checkpoint['config']['ssl_scope'] != config.ssl_scope:
                     raise ValueError('Checkpoint SSL protocol differs from requested protocol')
                 model.encoder.load_state_dict(checkpoint['encoder'],strict=True)
-                mlflow.log_param('encoder_checkpoint',str(encoder_checkpoint))
+                if use_mlflow: mlflow.log_param('encoder_checkpoint',str(encoder_checkpoint))
             model.to(device)
             groups = ([{'params':model.encoder.parameters(),'lr':config.encoder_lr},
                        {'params':model.head.parameters(),'lr':config.lr}] if config.stage=='finetune'
@@ -101,7 +116,7 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
             mixed = config.amp and device.type=='cuda'
             scaler = torch.amp.GradScaler('cuda',enabled=mixed)
             counts = parameter_counts(model)
-            mlflow.log_params({f'parameters_{k}':v for k,v in counts.items()})
+            if use_mlflow: mlflow.log_params({f'parameters_{k}':v for k,v in counts.items()})
             event('dataset_ready',samples=len(indices),batches=len(batches),parameters=counts)
             best = float('-inf')
             history = []
@@ -163,21 +178,21 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
                     event('best_model_saved',epoch=epoch+1,score=best,path=str(best_path))
                 history.append(dict(epoch=epoch+1,**metrics))
                 (result_dir/'history.json').write_text(json.dumps(history),encoding='utf-8')
-                mlflow.log_metrics(metrics,step=epoch+1)
+                if use_mlflow: mlflow.log_metrics(metrics,step=epoch+1)
                 event('epoch_finished',epoch=epoch+1,**metrics)
                 if commit: commit()
             restored = torch.load(best_path,map_location=device,weights_only=True)
             model.load_state_dict(restored['model'])
-            summary = dict(config=asdict(config),counts=counts,checkpoint=str(best_path),mlflow_run_id=run.info.run_id)
+            summary = dict(config=asdict(config),counts=counts,checkpoint=str(best_path),mlflow_run_id=run_id)
             if not paired:
                 test, matrix = evaluate(model,loader(dataset,split['test'],config.batch_size),device,config.max_batches)
                 summary['test'] = test
-                mlflow.log_metrics({f'test_{k}':v for k,v in test.items()})
+                if use_mlflow: mlflow.log_metrics({f'test_{k}':v for k,v in test.items()})
                 np.savetxt(result_dir/'confusion_matrix.csv',matrix,delimiter=',',fmt='%d')
             (result_dir/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
             event('run_finished',checkpoint=str(best_path))
-            mlflow.log_artifacts(str(result_dir),artifact_path='results')
-            mlflow.log_artifact(str(best_path),artifact_path='models')
+            if use_mlflow: mlflow.log_artifacts(str(result_dir),artifact_path='results')
+            if use_mlflow: mlflow.log_artifact(str(best_path),artifact_path='models')
             return summary
     except Exception:
         event('run_failed',traceback=traceback.format_exc())
