@@ -26,7 +26,7 @@ image = modal.Image.debian_slim(python_version="3.12").uv_pip_install(
 
 @app.function(
     image=image,
-    gpu="L40S",
+    gpu="A10G",
     timeout=10 * 60,
     volumes={VOLUME_PATH: data_volume, OUTPUT_PATH: output_volume},
 )
@@ -61,7 +61,7 @@ def main(stage: str = 'setup', epochs: int = 0, batch_size: int = 0,
         train_remote.remote(stage,epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope,isolated_tracking)
 
 
-@app.function(image=image, gpu='L40S', timeout=5*60*60,
+@app.function(image=image, gpu='A10G', timeout=5*60*60,
               volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
 def downstream_remote(epochs: int, batch_size: int, label_percent: int, encoder_checkpoint: str,
                       max_batches: int, policy: str, ssl_scope: str, isolated_tracking: bool = False):
@@ -83,7 +83,7 @@ def downstream_remote(epochs: int, batch_size: int, label_percent: int, encoder_
     return results
 
 
-@app.function(image=image, gpu='L40S', timeout=5*60*60,
+@app.function(image=image, gpu='A10G', timeout=5*60*60,
               volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
 def train_remote(stage: str, epochs: int, batch_size: int, label_percent: int, encoder_checkpoint: str,
                  max_batches: int, policy: str, ssl_scope: str, isolated_tracking: bool = False):
