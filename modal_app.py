@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import modal
 
@@ -20,7 +21,18 @@ image = modal.Image.debian_slim(python_version="3.12").uv_pip_install(
     "mlflow==3.16.0",
     "torchvision==0.29.0",
     "umap-learn==0.5.12",
+    "fastapi>=0.141.1",
+    "uvicorn>=0.52.4",
+    "scikit-learn>=1.9.1",
+    "pillow>=12.3.0",
 ).add_local_python_source("src")
+
+# Bundle the built frontend when present; the dashboard serves API-only otherwise.
+if Path("web/dist/index.html").is_file():
+    image = image.add_local_dir("web/dist", remote_path="/web/dist")
+    WEB_DIST = "/web/dist"
+else:
+    WEB_DIST = None
 
 
 @app.function(
@@ -109,3 +121,18 @@ def train_remote(stage: str, epochs: int, batch_size: int, label_percent: int, e
     # An explicit offline diagnostic, never a silent fallback for real runs.
     tracking_uri = 'sqlite:////tmp/le-satclr-smoke.db' if isolated_tracking else None
     return train(config,data_root,OUTPUT_PATH,encoder_checkpoint or None,tracking_uri,commit=output_volume.commit)
+
+
+@app.function(image=image, timeout=30*60,
+              volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
+@modal.asgi_app()
+def dashboard_app():
+    """Serve the evaluation dashboard (API + bundled frontend) on Modal."""
+    from src.dashboard import DashboardService, create_app
+    service = DashboardService(
+        root='/',
+        data_root=f'{VOLUME_PATH}/eurosat/EuroSAT_RGB',
+        split_path=f'{OUTPUT_PATH}/results/splits_seed42.json',
+        model_dirs=[f'{OUTPUT_PATH}/models'],
+    )
+    return create_app(service, WEB_DIST)

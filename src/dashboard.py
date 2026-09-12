@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -32,23 +33,33 @@ def _checkpoint_info(path):
         return None
 
 
-def discover_checkpoint(root, override=None):
+def discover_checkpoint(root, override=None, model_dirs=None):
     root = Path(root)
     if override:
         path = Path(override).expanduser()
         return path.resolve() if path.is_file() and _checkpoint_info(path) else None
+    if model_dirs is None:
+        model_dirs = [root / "outputs/models", root / "mlartifacts"]
     candidates = []
-    for directory in (root / "outputs/models", root / "mlartifacts"):
+    for directory in model_dirs:
+        directory = Path(directory)
         if directory.is_dir():
             candidates.extend(path for path in directory.rglob("*.pt") if _checkpoint_info(path))
     return max(candidates, key=lambda path: path.stat().st_mtime).resolve() if candidates else None
 
 
 class DashboardService:
-    def __init__(self, root=None, checkpoint_override=None):
+    def __init__(self, root=None, checkpoint_override=None, data_root=None,
+                 split_path=None, model_dirs=None):
         self.root = Path(root or Path.cwd()).resolve()
-        self.data_root = self.root / "Dataset/EuroSAT_RGB"
-        self.split_path = self.root / "outputs/results/splits_seed42.json"
+        self.data_root = Path(data_root or os.getenv("LE_SATCLR_DATA_ROOT")
+                              or self.root / "Dataset/EuroSAT_RGB")
+        self.split_path = Path(split_path or os.getenv("LE_SATCLR_SPLIT_PATH")
+                               or self.root / "outputs/results/splits_seed42.json")
+        raw_dirs = model_dirs or os.getenv("LE_SATCLR_MODEL_DIRS")
+        if isinstance(raw_dirs, str):
+            raw_dirs = [d for d in raw_dirs.split(os.pathsep) if d]
+        self.model_dirs = [Path(d) for d in raw_dirs] if raw_dirs else None
         self.checkpoint_override = checkpoint_override or os.getenv("LE_SATCLR_CHECKPOINT")
         self._lock = threading.Lock()
         self._job = {"state": "idle", "progress": {"done": 0, "total": 0}}
@@ -61,7 +72,7 @@ class DashboardService:
         return indices
 
     def status(self):
-        checkpoint = discover_checkpoint(self.root, self.checkpoint_override)
+        checkpoint = discover_checkpoint(self.root, self.checkpoint_override, self.model_dirs)
         dataset_ready = (self.data_root / CLASSES[0]).is_dir()
         try:
             test_samples = len(self._test_indices())
@@ -141,7 +152,7 @@ class DashboardService:
         indices = self._test_indices()
         if sample_limit:
             indices = indices[:sample_limit]
-        checkpoint = discover_checkpoint(self.root, self.checkpoint_override)
+        checkpoint = discover_checkpoint(self.root, self.checkpoint_override, self.model_dirs)
         state = _checkpoint_info(checkpoint)
         if not state:
             raise RuntimeError("No compatible classifier checkpoint")
@@ -201,6 +212,9 @@ class EvaluationRequest(BaseModel):
 
 def create_app(service, web_dist=None):
     dashboard = FastAPI(title="LE-SatCLR Dashboard", docs_url=None, redoc_url=None)
+    origins = [origin.strip() for origin in os.getenv("LE_SATCLR_CORS_ORIGINS", "*").split(",") if origin.strip()]
+    dashboard.add_middleware(CORSMiddleware, allow_origins=origins,
+                             allow_methods=["*"], allow_headers=["*"])
 
     @dashboard.middleware("http")
     async def security_headers(request, call_next):

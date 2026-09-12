@@ -28,8 +28,10 @@ type Job = {
   result?: Result;
 };
 
+const API_BASE = import.meta.env.VITE_API_URL ?? "";
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  const response = await fetch(`${API_BASE}${url}`, init);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || "The dashboard API did not respond.");
@@ -161,7 +163,7 @@ export default function App() {
 
           <div className="section-heading samples-heading"><div><p className="eyebrow">GROUND TRUTH CHECK</p><h2>Sample predictions</h2></div><p>A deterministic cross-section of the run</p></div>
           <div className="sample-grid">{result.samples.map((sample) => <article className="sample-card" key={sample.datasetIndex}>
-            <div className="sample-image"><img src={`/api/test-images/${sample.datasetIndex}`} alt={`EuroSAT test image labeled ${sample.actual}`} loading="lazy" /><span className={sample.isCorrect ? "verdict correct" : "verdict"}>{sample.isCorrect ? "MATCH" : "MISS"}</span></div>
+            <div className="sample-image"><img src={`${API_BASE}/api/test-images/${sample.datasetIndex}`} alt={`EuroSAT test image labeled ${sample.actual}`} loading="lazy" /><span className={sample.isCorrect ? "verdict correct" : "verdict"}>{sample.isCorrect ? "MATCH" : "MISS"}</span></div>
             <div className="sample-copy"><small>MODEL SAYS</small><strong>{sample.predicted}</strong><span>{formatPercent(sample.confidence)} confidence</span><span className="truth">Truth · {sample.actual}</span></div>
           </article>)}</div>
         </section> : <section className="waiting" aria-label="Awaiting evaluation"><div className="waiting-number">01</div><div><p className="eyebrow">RESULTS DECK</p><h2>Your evidence lands here.</h2><p>Connect the final checkpoint and run the untouched test split to reveal metrics, class-level errors, and individual predictions.</p><ol className="waiting-flow"><li><b>01</b><span>Connect a classifier checkpoint</span></li><li><b>02</b><span>Run the held-out test split</span></li><li><b>03</b><span>Inspect errors and predictions</span></li></ol></div></section>}
