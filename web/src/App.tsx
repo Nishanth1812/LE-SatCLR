@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { formatDuration, formatPercent, progressPercent } from "./lib";
+import { formatDuration, formatPercent, isEvaluationPending, progressPercent } from "./lib";
 
 type Status = {
   ready: boolean;
@@ -31,7 +31,7 @@ type Result = {
 };
 
 type Job = {
-  state: "idle" | "running" | "complete" | "failed";
+  state: "idle" | "starting" | "running" | "complete" | "failed";
   progress: { done: number; total: number };
   startedAt?: string;
   error?: string;
@@ -94,10 +94,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (job.state !== "running") return;
+    if (!isEvaluationPending(job.state)) return;
     const timer = window.setInterval(() => {
       setNow(Date.now());
-      api<Job>("/api/evaluations/current").then(setJob).catch((reason) => setError(reason.message));
+      if (job.state === "running") {
+        api<Job>("/api/evaluations/current").then(setJob).catch((reason) => setError(reason.message));
+      }
     }, 750);
     return () => window.clearInterval(timer);
   }, [job.state]);
@@ -108,6 +110,12 @@ export default function App() {
 
   async function runEvaluation() {
     setError("");
+    setJob((current) => ({
+      ...current,
+      state: "starting",
+      startedAt: new Date().toISOString(),
+      progress: { done: 0, total: sampleLimit || status?.testSamples || 0 },
+    }));
     try {
       setJob(await api<Job>("/api/evaluations", {
         method: "POST",
@@ -115,13 +123,16 @@ export default function App() {
         body: JSON.stringify({ sampleLimit, checkpoint: selectedCheckpoint || null }),
       }));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not start evaluation.");
+      const message = reason instanceof Error ? reason.message : "Could not start evaluation.";
+      setError(message);
+      setJob((current) => ({ ...current, state: "failed", error: message }));
     }
   }
 
   const result = job.result;
   const progress = progressPercent(job.progress.done, job.progress.total);
   const isEstimate = Boolean(result && status && result.sampleCount < status.testSamples);
+  const isPending = isEvaluationPending(job.state);
 
   return (
     <>
@@ -155,7 +166,7 @@ export default function App() {
               <div><dt>Test samples</dt><dd>{status?.testSamples?.toLocaleString() || "—"}</dd></div>
             </dl>
             <div className="control-label"><label htmlFor="model-pick">Model</label><span>1% vs 10% labels</span></div>
-            <select id="model-pick" value={selectedCheckpoint} onChange={(event) => setSelectedCheckpoint(event.target.value)} disabled={job.state === "running"}>
+            <select id="model-pick" value={selectedCheckpoint} onChange={(event) => setSelectedCheckpoint(event.target.value)} disabled={isPending}>
               <option value="">Newest model (auto)</option>
               {checkpoints.map((item) => <option key={item.name} value={item.name}>
                 {item.stage} · {item.labelPercent === null ? "labels n/a" : `${item.labelPercent}% labels`} ({item.name})
@@ -163,12 +174,16 @@ export default function App() {
             </select>
             <div className="control-label"><label htmlFor="sample-limit">Images to evaluate</label><span>Random held-out images</span></div>
             <input id="sample-limit" type="number" min={0} max={status?.testSamples} value={sampleLimit}
-              onChange={(event) => setSampleLimit(Math.max(0, Number(event.target.value)))} disabled={job.state === "running"} />
+              onChange={(event) => setSampleLimit(Math.max(0, Number(event.target.value)))} disabled={isPending} />
             <p className="control-note">Use 0 for the full test split. Smaller runs are random estimates.</p>
-            <button className="run-button" onClick={runEvaluation} disabled={!status?.ready || job.state === "running"}>
-              <span>{job.state === "running" ? `Evaluating ${progress}%` : result ? "Run again" : "Evaluate final model"}</span><span aria-hidden="true">↗</span>
+            <div className="sample-presets" aria-label="Evaluation size shortcuts">
+              {[25, 100, 500].map((size) => <button key={size} type="button" className={sampleLimit === size ? "selected" : ""} onClick={() => setSampleLimit(size)} disabled={isPending}>{size} images</button>)}
+              <button type="button" className={sampleLimit === 0 ? "selected" : ""} onClick={() => setSampleLimit(0)} disabled={isPending}>Full split</button>
+            </div>
+            <button className="run-button" onClick={runEvaluation} disabled={!status?.ready || isPending}>
+              <span>{job.state === "starting" ? "Starting evaluation…" : job.state === "running" ? `Evaluating ${progress}%` : result ? "Run again" : "Evaluate final model"}</span><span aria-hidden="true">↗</span>
             </button>
-            {job.state === "running" && <div className="progress-wrap"><div className="progress-status" aria-live="polite"><span>Forward pass in progress · {elapsedSeconds}s elapsed</span><b>{job.progress.done.toLocaleString()} / {job.progress.total.toLocaleString()}</b></div><div className="progress-track" role="progressbar" aria-label="Evaluation progress" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }} /></div></div>}
+            {isPending && <div className="progress-wrap"><div className="progress-status" aria-live="polite"><span>{job.state === "starting" ? `Contacting evaluation server · ${elapsedSeconds}s elapsed` : `Forward pass in progress · ${elapsedSeconds}s elapsed`}</span><b>{job.progress.done.toLocaleString()} / {job.progress.total.toLocaleString()} images</b></div><div className={job.state === "starting" ? "progress-track starting" : "progress-track"} role="progressbar" aria-label="Evaluation progress" aria-valuetext={job.state === "starting" ? "Starting evaluation" : `${progress}% complete`} aria-valuenow={job.state === "running" ? progress : undefined} aria-valuemin={0} aria-valuemax={100}><span style={job.state === "running" ? { width: `${progress}%` } : undefined} /></div></div>}
             {(error || job.error) && <p className="error-message" role="alert">{error || job.error}</p>}
             {status && !status.checkpoint && <p className="setup-note">Set <code>LE_SATCLR_CHECKPOINT</code> to your final <code>.pt</code> file, then restart the API.</p>}
           </aside>

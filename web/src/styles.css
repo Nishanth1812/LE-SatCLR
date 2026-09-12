@@ -68,12 +68,17 @@ h1 { font-size: clamp(4rem, 10vw, 9rem); line-height: .82; letter-spacing: -.075
 .run-panel select, .run-panel input { width: 100%; color: #132019; background: #f7f9f3; border: 1px solid #9aa79d; border-radius: 0; padding: .85rem; }
 .run-panel select { appearance: none; background: #f7f9f3 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23132019' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 1rem center; padding-right: 2.5rem; }
 .control-note { margin: .45rem 0 0; color: #68776e; font-size: .66rem; line-height: 1.35; }
+.sample-presets { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .8rem; }
+.sample-presets button { padding: .4rem .55rem; border: 1px solid #a7b0a8; background: transparent; color: #4b5b51; font: .62rem var(--mono); cursor: pointer; }
+.sample-presets button:hover:not(:disabled), .sample-presets button.selected { border-color: #557d1c; background: #dff2bd; color: #243910; }
+.sample-presets button:disabled { opacity: .55; cursor: not-allowed; }
 .run-button { width: 100%; margin-top: .75rem; border: 0; border-radius: 0; padding: 1rem; display: flex; justify-content: space-between; background: #10231a; color: white; font-weight: 700; cursor: pointer; transition: background .2s, color .2s, transform .2s, box-shadow .2s; }
 .run-button:hover:not(:disabled) { background: var(--acid); color: #07100c; transform: translate(-2px, -2px); box-shadow: 4px 4px 0 #496c20; }
 .run-button:active:not(:disabled) { transform: translate(0); box-shadow: none; }
 .run-button:disabled { opacity: .45; cursor: not-allowed; }
 .progress-track { height: 4px; background: #bdc7bf; margin-top: .75rem; overflow: hidden; }
 .progress-track span { height: 100%; display: block; background: #507f13; transition: width .3s; }
+.progress-track.starting span { width: 34%; animation: progress-wait 1.1s ease-in-out infinite; }
 .progress-status { display: flex; justify-content: space-between; gap: 1rem; margin-top: .8rem; color: #58675e; font: .62rem var(--mono); text-transform: uppercase; letter-spacing: .05em; }
 .progress-status b { color: #132019; font-weight: 600; }
 .setup-note, .error-message { font-size: .75rem; line-height: 1.5; margin: .85rem 0 0; }
@@ -144,6 +149,7 @@ footer span:first-child { color: var(--ink); }
 @keyframes terrain-sweep { to { background-position: -220% 0; } }
 @keyframes orbital-drift { 50% { transform: translate(2vw, -1vh) scale(1.025); opacity: .72; } }
 @keyframes console-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes progress-wait { 50% { transform: translateX(195%); } }
 @media (max-width: 960px) {
   .masthead { grid-template-columns: 1fr; }
   .run-panel { max-width: 38rem; }
