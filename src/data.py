@@ -19,9 +19,9 @@ def seed_everything():
     np.random.seed(42)
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-    torch.use_deterministic_algorithms(True)
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.deterministic = False
+    torch.use_deterministic_algorithms(False)
 
 
 def seed_worker(worker_id):
@@ -100,4 +100,6 @@ def loader(dataset, indices, batch_size, training=False, paired=False, policy='s
     return DataLoader(Views(dataset, indices, training, paired, policy),
                       batch_size=batch_size, shuffle=training, drop_last=paired,
                       num_workers=workers, worker_init_fn=seed_worker,
-                      generator=torch.Generator().manual_seed(42))
+                      generator=torch.Generator().manual_seed(42),
+                      pin_memory=torch.cuda.is_available(),
+                      persistent_workers=workers > 0)

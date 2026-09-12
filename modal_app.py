@@ -118,7 +118,7 @@ def train_remote(stage,epochs,batch_size,label_percent,encoder_checkpoint,max_ba
             archive.extractall(data_root)
         data_volume.commit()
     config = Config(stage=stage,epochs=epochs,batch_size=batch_size,label_percent=label_percent,
-                    max_batches=max_batches,policy=policy,ssl_scope=ssl_scope)
+                    max_batches=max_batches,policy=policy,ssl_scope=ssl_scope,workers=4)
     # An explicit offline diagnostic, never a silent fallback for real runs.
     tracking_uri = 'sqlite:////tmp/le-satclr-smoke.db' if isolated_tracking else None
     return train(config,data_root,OUTPUT_PATH,encoder_checkpoint or None,tracking_uri,commit=output_volume.commit)

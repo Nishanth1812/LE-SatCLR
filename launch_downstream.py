@@ -38,7 +38,7 @@ def _run_budget(budget, **kwargs):
     return budget, result.returncode
 
 
-def launch(encoder_checkpoint, epochs=100, batch_size=128, max_batches=0,
+def launch(encoder_checkpoint, epochs=0, batch_size=0, max_batches=0,
            policy="standard", ssl_scope="all", isolated_tracking=False):
     params = dict(encoder_checkpoint=str(encoder_checkpoint), epochs=epochs,
                   batch_size=batch_size, max_batches=max_batches,
@@ -61,8 +61,10 @@ def launch(encoder_checkpoint, epochs=100, batch_size=128, max_batches=0,
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ssl-checkpoint", required=True)
-    parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--epochs", type=int, default=0,
+                        help="0 selects per-stage defaults: simclr 200, probe 50, finetune 75, baseline 100")
+    parser.add_argument("--batch-size", type=int, default=0,
+                        help="0 selects per-stage defaults: simclr 128, downstream 64")
     parser.add_argument("--max-batches", type=int, default=0)
     parser.add_argument("--policy", default="standard")
     parser.add_argument("--ssl-scope", default="all")

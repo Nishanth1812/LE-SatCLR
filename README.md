@@ -19,19 +19,34 @@ Local runs accept `--tracking-uri` (HTTP server or SQLite URI).
 
 ## Training
 
+All Modal functions use L40S GPUs. Omit `--epochs`/`--batch-size` to use
+per-stage defaults: SimCLR 200/128, probe 50/64, fine-tune 75/64,
+baseline 100/64. Add `--detach` to close your laptop mid-run.
+
 ```powershell
-uv run python -m modal run modal_app.py --stage simclr --epochs 20 --batch-size 128
-uv run python -m modal run modal_app.py --stage probe --label-percent 1 --encoder-checkpoint /outputs/models/EXPERIMENT/RUN_ID/CHECKPOINT.pt
-uv run python -m modal run modal_app.py --stage finetune --label-percent 1 --encoder-checkpoint /outputs/models/EXPERIMENT/RUN_ID/CHECKPOINT.pt
-uv run python -m modal run modal_app.py --stage baseline --label-percent 1
+uv run modal run --detach modal_app.py --stage simclr
+uv run python launch_downstream.py --ssl-checkpoint /outputs/models/EXPERIMENT/RUN_ID/CHECKPOINT.pt
+```
+
+`launch_downstream.py` runs 1% and 10% budgets in parallel as detached apps
+`le-satclr-1pct` and `le-satclr-10pct`; each runs probe, fine-tune and baseline
+(3 results) from the same SSL checkpoint via `downstream_remote`. Single-stage
+runs are also available:
+
+```powershell
+uv run modal run modal_app.py --stage probe --label-percent 1 --encoder-checkpoint /outputs/models/EXPERIMENT/RUN_ID/CHECKPOINT.pt
+uv run modal run modal_app.py --stage finetune --label-percent 1 --encoder-checkpoint /outputs/models/EXPERIMENT/RUN_ID/CHECKPOINT.pt
+uv run modal run modal_app.py --stage baseline --label-percent 1
 ```
 
 Repeat downstream commands with `--label-percent 10`. Each probe/fine-tune starts
 from the same SSL checkpoint, with a fresh classifier. `--policy satellite`
 enables rotation/vertical flip and milder color jitter for the augmentation
 ablation; compare to `standard` with otherwise identical settings.
-`--max-batches` marks a run as a smoke test and limits training and evaluation;
-omit it for scientific results. No complete training run is started by tests.
+`--max-batches` limits training and evaluation batches (a dev shortcut for quick
+checks); omit it for scientific results. GPU throughput uses mixed precision on
+CUDA, pinned memory, non-blocking transfers, 4 data workers on Modal, and
+cudnn benchmarking with seed-42 initialization.
 
 ## Architecture and protocol
 
@@ -85,5 +100,6 @@ This extracts validation/test 512-D features for random, SSL, and fine-tuned
 encoders; writes UMAP (seed 42), nearest-neighbor panels, training curves,
 confusion matrices, and a comparison CSV/accuracy curve for completed real runs.
 Only measured 1% and 10% budgets are plotted; optional t-SNE and extra budgets
-are not run. Smoke summaries are excluded. Test performance is evidence to
+are not run. Runs limited with `--max-batches` are excluded from the comparison
+table. Test performance is evidence to
 measure, not a guaranteed ordering of methods.

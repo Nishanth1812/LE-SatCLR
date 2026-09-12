@@ -23,7 +23,7 @@ def evaluate(model, batches, device, max_batches=0):
     with torch.no_grad():
         for step, (x,y) in enumerate(batches):
             if max_batches and step >= max_batches: break
-            logits = model(x.to(device))
+            logits = model(x.to(device, non_blocking=True))
             if not torch.isfinite(logits).all(): raise FloatingPointError('Nonfinite validation logits')
             actual.extend(y.tolist())
             predicted.extend(logits.argmax(1).cpu().tolist())
@@ -71,7 +71,7 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
         mlflow.set_experiment('le-satclr')
         with mlflow.start_run(run_name=name) as run:
             mlflow.log_params(asdict(config))
-            mlflow.set_tags({'local_run_id':identifier,'smoke_test':bool(config.max_batches),
+            mlflow.set_tags({'local_run_id':identifier,
                              'protocol':'transductive' if config.ssl_scope=='all' else 'inductive'})
             event('run_started',mlflow_run_id=run.info.run_id,device=str(device))
             dataset = catalog(data_root)
@@ -112,7 +112,7 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
                 total, seen = 0., 0
                 for step,(x,y) in enumerate(batches):
                     if config.max_batches and step >= config.max_batches: break
-                    x,y = x.to(device),y.to(device)
+                    x,y = x.to(device, non_blocking=True),y.to(device, non_blocking=True)
                     optimizer.zero_grad(set_to_none=True)
                     with torch.autocast(device_type=device.type,enabled=mixed):
                         if paired:
@@ -122,7 +122,11 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
                     if not torch.isfinite(loss): raise FloatingPointError('Nonfinite training loss')
                     scaler.scale(loss).backward()
                     scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(),max_norm=10.,error_if_nonfinite=True)
+                    if not all(torch.isfinite(p.grad).all() for p in model.parameters() if p.grad is not None):
+                        event('grad_nonfinite_skipped',epoch=epoch+1,step=step,scale=scaler.get_scale())
+                        scaler.update()
+                        continue
+                    torch.nn.utils.clip_grad_norm_(model.parameters(),max_norm=10.,error_if_nonfinite=False)
                     scaler.step(optimizer)
                     scaler.update()
                     total += loss.item()*len(x)
@@ -136,7 +140,7 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
                     with torch.no_grad():
                         for step,(a,b) in enumerate(loader(dataset,split['val'],config.batch_size,True,True,config.policy)):
                             if config.max_batches and step >= config.max_batches: break
-                            _,z = model(torch.cat((a,b)).to(device))
+                            _,z = model(torch.cat((a,b)).to(device, non_blocking=True))
                             n = len(a)
                             similarity = z[:n] @ z[n:].T
                             target = torch.arange(n,device=device)
