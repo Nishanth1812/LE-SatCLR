@@ -18,8 +18,8 @@
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--surface); }
-button, select { font: inherit; }
-button:focus-visible, select:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--acid); outline-offset: 3px; }
+button, select, input { font: inherit; }
+button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--acid); outline-offset: 3px; }
 
 body::before {
   content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .22; z-index: -1;
@@ -65,7 +65,9 @@ h1 { font-size: clamp(4rem, 10vw, 9rem); line-height: .82; letter-spacing: -.075
 .control-label { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: .45rem; }
 .run-panel label { display: block; font-size: .75rem; font-weight: 700; }
 .control-label span { color: #68776e; font: .58rem var(--mono); text-transform: uppercase; letter-spacing: .06em; }
-.run-panel select { width: 100%; appearance: none; color: #132019; background: #f7f9f3 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23132019' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 1rem center; border: 1px solid #9aa79d; border-radius: 0; padding: .85rem 2.5rem .85rem .85rem; }
+.run-panel select, .run-panel input { width: 100%; color: #132019; background: #f7f9f3; border: 1px solid #9aa79d; border-radius: 0; padding: .85rem; }
+.run-panel select { appearance: none; background: #f7f9f3 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23132019' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 1rem center; padding-right: 2.5rem; }
+.control-note { margin: .45rem 0 0; color: #68776e; font-size: .66rem; line-height: 1.35; }
 .run-button { width: 100%; margin-top: .75rem; border: 0; border-radius: 0; padding: 1rem; display: flex; justify-content: space-between; background: #10231a; color: white; font-weight: 700; cursor: pointer; transition: background .2s, color .2s, transform .2s, box-shadow .2s; }
 .run-button:hover:not(:disabled) { background: var(--acid); color: #07100c; transform: translate(-2px, -2px); box-shadow: 4px 4px 0 #496c20; }
 .run-button:active:not(:disabled) { transform: translate(0); box-shadow: none; }
