@@ -17,3 +17,9 @@ mlartifacts/
 *.pyc
 runs/
 *.tmp
+.env
+.env.*
+*.pem
+*.key
+web/node_modules/
+web/dist/
