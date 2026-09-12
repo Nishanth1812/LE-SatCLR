@@ -56,7 +56,7 @@ MLflow logging alongside the file logs.
 ## Training
 
 All Modal functions use L40S GPUs. Omit `--epochs`/`--batch-size` to use
-per-stage defaults: SimCLR 200/128, probe 50/64, fine-tune 75/64,
+per-stage defaults: SimCLR 100/128, probe 50/64, fine-tune 75/64,
 baseline 100/64. Add `--detach` to close your laptop mid-run.
 
 ```powershell

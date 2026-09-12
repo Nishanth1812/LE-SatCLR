@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 
-STAGE_EPOCHS = {'simclr': 200, 'probe': 50, 'finetune': 75, 'baseline': 100}
+STAGE_EPOCHS = {'simclr': 100, 'probe': 50, 'finetune': 75, 'baseline': 100}
 STAGE_BATCH_SIZE = {'simclr': 128, 'probe': 64, 'finetune': 64, 'baseline': 64}
 
 
@@ -20,7 +20,7 @@ def resolve_batch_size(stage, batch_size):
 @dataclass
 class Config:
     stage: str = 'simclr'
-    epochs: int = 200
+    epochs: int = 100
     batch_size: int = 128
     label_percent: int = 1
     policy: str = 'standard'

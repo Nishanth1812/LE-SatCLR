@@ -62,7 +62,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ssl-checkpoint", required=True)
     parser.add_argument("--epochs", type=int, default=0,
-                        help="0 selects per-stage defaults: simclr 200, probe 50, finetune 75, baseline 100")
+                        help="0 selects per-stage defaults: simclr 100, probe 50, finetune 75, baseline 100")
     parser.add_argument("--batch-size", type=int, default=0,
                         help="0 selects per-stage defaults: simclr 128, downstream 64")
     parser.add_argument("--max-batches", type=int, default=0)
