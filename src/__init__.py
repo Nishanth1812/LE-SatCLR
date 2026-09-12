@@ -1,0 +1,1 @@
+"""EuroSAT contrastive learning."""
