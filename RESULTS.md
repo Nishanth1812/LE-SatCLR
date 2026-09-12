@@ -1,9 +1,9 @@
 # LE-SatCLR Results
 
-**Evaluation date:** 2026-09-12  
-**Protocol:** Transductive SimCLR pretraining (`ssl_scope=all`) with standard augmentation and seed 42.  
-**Infrastructure:** Modal L40S for SSL pretraining; A10G for the 1% downstream rerun.  
-**Reproducibility:** Checkpoints and run logs are retained in the `le-satclr-outputs` volume.
+- **Evaluation date:** 2026-09-12
+- **Protocol:** Transductive SimCLR pretraining (`ssl_scope=all`) with standard augmentation and seed 42.
+- **Infrastructure:** Modal L40S for SSL pretraining; A10G for the 1% downstream rerun.
+- **Reproducibility:** Checkpoints and run logs are retained in the `le-satclr-outputs` volume.
 
 ## Executive summary
 
