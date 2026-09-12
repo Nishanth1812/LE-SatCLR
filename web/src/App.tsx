@@ -133,7 +133,7 @@ export default function App() {
               <div><dt>Training stage</dt><dd>{status?.checkpoint?.stage || "—"}</dd></div>
               <div><dt>Test samples</dt><dd>{status?.testSamples?.toLocaleString() || "—"}</dd></div>
             </dl>
-            <label htmlFor="sample-limit">Evaluation size</label>
+            <div className="control-label"><label htmlFor="sample-limit">Evaluation size</label><span>Real test images only</span></div>
             <select id="sample-limit" value={sampleLimit} onChange={(event) => setSampleLimit(Number(event.target.value))} disabled={job.state === "running"}>
               <option value={0}>Full test split</option>
               <option value={100}>Quick check · 100 images</option>
@@ -142,14 +142,14 @@ export default function App() {
             <button className="run-button" onClick={runEvaluation} disabled={!status?.ready || job.state === "running"}>
               <span>{job.state === "running" ? `Evaluating ${progress}%` : result ? "Run again" : "Evaluate final model"}</span><span aria-hidden="true">↗</span>
             </button>
-            {job.state === "running" && <div className="progress-track" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }} /></div>}
+            {job.state === "running" && <div className="progress-wrap"><div className="progress-status" aria-live="polite"><span>Forward pass in progress</span><b>{job.progress.done.toLocaleString()} / {job.progress.total.toLocaleString()}</b></div><div className="progress-track" role="progressbar" aria-label="Evaluation progress" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }} /></div></div>}
             {(error || job.error) && <p className="error-message" role="alert">{error || job.error}</p>}
             {status && !status.checkpoint && <p className="setup-note">Set <code>LE_SATCLR_CHECKPOINT</code> to your final <code>.pt</code> file, then restart the API.</p>}
           </aside>
         </section>
 
         {result ? <section className="results" aria-live="polite">
-          <div className="section-heading"><div><p className="eyebrow">LATEST RUN</p><h2>Test performance</h2></div><p>{result.sampleCount.toLocaleString()} images · {formatDuration(result.durationSeconds)}</p></div>
+          <div className="section-heading"><div><p className="eyebrow">LATEST RUN</p><h2>Test performance</h2><p className="section-summary">A measured view of how the classifier behaves beyond its training data.</p></div><p>{result.sampleCount.toLocaleString()} images · {formatDuration(result.durationSeconds)}</p></div>
           <div className="metrics-row"><Metric label="Accuracy" value={result.metrics.accuracy} lead /><Metric label="Macro F1" value={result.metrics.macroF1} /><Metric label="Precision" value={result.metrics.precision} /><Metric label="Recall" value={result.metrics.recall} /></div>
 
           <div className="analysis-grid">
@@ -164,7 +164,7 @@ export default function App() {
             <div className="sample-image"><img src={`/api/test-images/${sample.datasetIndex}`} alt={`EuroSAT test image labeled ${sample.actual}`} loading="lazy" /><span className={sample.isCorrect ? "verdict correct" : "verdict"}>{sample.isCorrect ? "MATCH" : "MISS"}</span></div>
             <div className="sample-copy"><small>MODEL SAYS</small><strong>{sample.predicted}</strong><span>{formatPercent(sample.confidence)} confidence</span><span className="truth">Truth · {sample.actual}</span></div>
           </article>)}</div>
-        </section> : <section className="waiting" aria-label="Awaiting evaluation"><span>01</span><div><p className="eyebrow">RESULTS DECK</p><h2>Your evidence lands here.</h2><p>Connect the final checkpoint and run the untouched test split to reveal metrics, class-level errors, and individual predictions.</p></div></section>}
+        </section> : <section className="waiting" aria-label="Awaiting evaluation"><div className="waiting-number">01</div><div><p className="eyebrow">RESULTS DECK</p><h2>Your evidence lands here.</h2><p>Connect the final checkpoint and run the untouched test split to reveal metrics, class-level errors, and individual predictions.</p><ol className="waiting-flow"><li><b>01</b><span>Connect a classifier checkpoint</span></li><li><b>02</b><span>Run the held-out test split</span></li><li><b>03</b><span>Inspect errors and predictions</span></li></ol></div></section>}
       </main>
       <footer><span>LE-SatCLR</span><span>LABEL-EFFICIENT SATELLITE CLASSIFICATION</span><span>SEED 42</span></footer>
     </>
