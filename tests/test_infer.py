@@ -6,6 +6,7 @@ from pathlib import Path
 import torch
 from PIL import Image
 
+from src.data import CLASSES
 from src.infer import load_classifier, predict_image
 from src.models import Classifier
 
@@ -22,10 +23,7 @@ class InferTests(unittest.TestCase):
             model, stage, device = load_classifier(checkpoint, torch.device("cpu"))
             self.assertEqual(stage, "baseline")
             result = predict_image(model, image, device, topk=3)
-            self.assertIn(result["predicted"], [c for c in
-                             ["AnnualCrop", "Forest", "HerbaceousVegetation", "Highway",
-                              "Industrial", "Pasture", "PermanentCrop", "Residential",
-                              "River", "SeaLake"]])
+            self.assertIn(result["predicted"], CLASSES)
             self.assertEqual(len(result["topk"]), 3)
             self.assertGreaterEqual(result["confidence"], 0)
             self.assertLessEqual(result["confidence"], 1)

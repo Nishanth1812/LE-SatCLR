@@ -10,7 +10,6 @@ OUTPUT_VOLUME_NAME = "le-satclr-outputs"
 OUTPUT_PATH = "/outputs"
 RESULTS_PATH = f"{OUTPUT_PATH}/results"
 MODELS_PATH = f"{OUTPUT_PATH}/models"
-MODEL_NAME_TEMPLATE = "{experiment}_seed42_best.pt"
 
 app = modal.App(APP_NAME)
 data_volume = modal.Volume.from_name(VOLUME_NAME)

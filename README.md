@@ -1,50 +1,16 @@
 # LE-SatCLR
 Label-Efficient Satellite Classification using Contrastive Learning
 
-Architecture: [SSL EuroSAT Architecture Plan (1).md](<SSL EuroSAT Architecture Plan (1).md>).
-References: [SOURCES.md](SOURCES.md).
+Architecture: [docs/architecture.md](docs/architecture.md).
+References: [docs/sources.md](docs/sources.md).
 
 ## Setup and verification
 
 ```powershell
 uv sync --frozen
 uv run python -m unittest discover -s tests -v
-uv run python -m modal run modal_app.py --stage simclr --epochs 1 --batch-size 8 --max-batches 2
+uv run modal run modal_app.py --stage simclr --epochs 1 --batch-size 8 --max-batches 2
 ```
-
-## Final-model dashboard
-
-The dashboard evaluates a trained `probe`, `finetune`, or `baseline` checkpoint
-against the saved EuroSAT test split. It never substitutes mock predictions when
-a checkpoint is unavailable. The newest classifier checkpoint under
-`outputs/models` or `mlartifacts` is selected automatically; set an explicit one
-when needed:
-
-```powershell
-$env:LE_SATCLR_CHECKPOINT = "C:\path\to\finetune_best.pt"
-```
-
-For frontend development, run the API and Vite in separate terminals:
-
-```powershell
-uv run uvicorn src.dashboard:app --reload
-cd web
-npm install
-npm run dev
-```
-
-Open `http://localhost:5173`. For the single-process demo build:
-
-```powershell
-cd web
-npm install
-npm run build
-cd ..
-uv run python -m src.dashboard
-```
-
-Then open `http://127.0.0.1:8000`. The interface reports exactly which of the
-dataset, saved split, or final checkpoint is missing if it cannot start a run.
 
 No experiment server is required. Training logs to the console and
 `results/<experiment>/<run_id>/training.log`; metrics, history, summaries and
@@ -55,7 +21,7 @@ MLflow logging alongside the file logs.
 
 ## Training
 
-All Modal functions use L40S GPUs. Omit `--epochs`/`--batch-size` to use
+All Modal functions use A10G GPUs. Omit `--epochs`/`--batch-size` to use
 per-stage defaults: SimCLR 100/128, probe 50/64, fine-tune 75/64,
 baseline 75/64. Add `--detach` to close your laptop mid-run.
 
@@ -116,8 +82,8 @@ bitwise equivalence across hardware, library versions, or platforms.
 `results/<experiment>/<run_id>/` holds timestamped elapsed-time JSON console/file
 logs, history, summary, and confusion matrix CSV. If `--tracking-uri` is given,
 the same parameters, per-epoch metrics, results, and best checkpoint also go to
-MLflow. Exceptions propagate and
-are recorded in the persisted log. Volumes commit after each epoch and on exit.
+MLflow. Exceptions propagate and are recorded in the persisted log.
+Volumes commit after each epoch and on exit.
 `models/<experiment>/<run_id>/<experiment>_best.pt` prevents rerun collisions;
 it includes model/encoder weights, optimizer, scheduler, scaler, epoch and config.
 Classifier best is selected by validation accuracy; SSL best by training loss.
@@ -130,7 +96,8 @@ interrupted-training resume is not yet exposed as a command.
 The backend serves the trained classifier and the built React frontend from one
 process. It needs `Dataset/EuroSAT_RGB`, `outputs/results/splits_seed42.json`
 and a classifier checkpoint under `outputs/models/` (newest `*.pt` wins, or set
-`LE_SATCLR_CHECKPOINT` to override).
+`LE_SATCLR_CHECKPOINT` to override, e.g.
+`$env:LE_SATCLR_CHECKPOINT = "outputs/models/finetune_1pct_best.pt"`).
 
 ```powershell
 uv run python -m src.dashboard
@@ -140,7 +107,9 @@ Open http://127.0.0.1:8000 — status, evaluation jobs (accuracy/precision/recal
 confusion matrix, per-class recall, sample predictions with confidence) and
 test-split image serving live there. Only images in the saved test split are
 served; everything else 404s. To rebuild the frontend: `npm --prefix web install`
-then `npm --prefix web run build`.
+then `npm --prefix web run build`. For frontend development with hot reload,
+run `uv run uvicorn src.dashboard:app --reload` and `npm --prefix web run dev`
+in separate terminals, then open `http://localhost:5173`.
 
 ## One-command inference
 
