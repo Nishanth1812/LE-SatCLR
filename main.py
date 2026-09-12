@@ -8,7 +8,7 @@ def main():
     parser.add_argument('--output-root',default='outputs')
     parser.add_argument('--encoder-checkpoint')
     parser.add_argument('--tracking-uri')
-    parser.add_argument('--epochs',type=int,default=20)
+    parser.add_argument('--epochs',type=int,default=100)
     parser.add_argument('--batch-size',type=int,default=128)
     parser.add_argument('--label-percent',type=int,choices=[1,10],default=1)
     parser.add_argument('--max-batches',type=int,default=0)

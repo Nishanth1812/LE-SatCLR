@@ -1,7 +1,9 @@
+import os
+
 import modal
 
 
-APP_NAME = "le-satclr"
+APP_NAME = os.environ.get("LE_SATCLR_APP_NAME", "le-satclr")
 VOLUME_NAME = "le-satclr-data"
 VOLUME_PATH = "/vol"
 OUTPUT_VOLUME_NAME = "le-satclr-outputs"
@@ -26,7 +28,7 @@ image = modal.Image.debian_slim(python_version="3.12").uv_pip_install(
 
 @app.function(
     image=image,
-    gpu="T4",
+    gpu="A10G",
     timeout=10 * 60,
     secrets=[mlflow_secret],
     volumes={VOLUME_PATH: data_volume, OUTPUT_PATH: output_volume},
@@ -68,22 +70,40 @@ def smoke_test():
 
 
 @app.local_entrypoint()
-def main(stage: str = 'setup', epochs: int = 20, batch_size: int = 128,
+def main(stage: str = 'setup', epochs: int = 100, batch_size: int = 128,
          label_percent: int = 1, encoder_checkpoint: str = '', max_batches: int = 0,
-         policy: str = 'standard', ssl_scope: str = 'all'):
+         policy: str = 'standard', ssl_scope: str = 'all', isolated_tracking: bool = False):
     if stage == 'setup':
         smoke_test.remote()
     else:
-        train_remote.remote(stage,epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope)
+        train_remote.remote(stage,epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope,isolated_tracking)
 
 
-@app.function(image=image, gpu='T4', timeout=5*60*60, secrets=[mlflow_secret],
+@app.function(image=image, gpu='A10G', timeout=5*60*60, secrets=[mlflow_secret],
               volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
-def train_remote(stage,epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope):
+def downstream_remote(epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope,isolated_tracking=False):
+    """Run probe, finetune and baseline for one label budget from the same SSL checkpoint."""
+    if label_percent not in (1,10):
+        raise ValueError('Label budget must be 1 or 10')
+    if not encoder_checkpoint:
+        raise ValueError('An SSL checkpoint is required')
+    results = []
+    for stage in ('probe','finetune','baseline'):
+        checkpoint = encoder_checkpoint if stage != 'baseline' else ''
+        results.append(train_remote.local(stage,epochs,batch_size,label_percent,checkpoint,
+                                          max_batches,policy,ssl_scope,isolated_tracking))
+    return results
+
+
+@app.function(image=image, gpu='A10G', timeout=5*60*60, secrets=[mlflow_secret],
+              volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
+def train_remote(stage,epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope,isolated_tracking=False):
     from pathlib import Path
     import zipfile
     from src.config import Config
     from src.training import train
+    if isolated_tracking and not max_batches:
+        raise ValueError('Isolated tracking is only allowed for smoke tests')
     data_root = Path(VOLUME_PATH)/'eurosat'
     if not (data_root/'EuroSAT_RGB').exists():
         with zipfile.ZipFile(data_root/'EuroSAT_RGB.zip') as archive:
@@ -94,4 +114,6 @@ def train_remote(stage,epochs,batch_size,label_percent,encoder_checkpoint,max_ba
         data_volume.commit()
     config = Config(stage=stage,epochs=epochs,batch_size=batch_size,label_percent=label_percent,
                     max_batches=max_batches,policy=policy,ssl_scope=ssl_scope)
-    return train(config,data_root,OUTPUT_PATH,encoder_checkpoint or None,commit=output_volume.commit)
+    # An explicit offline diagnostic, never a silent fallback for real runs.
+    tracking_uri = 'sqlite:////tmp/le-satclr-smoke.db' if isolated_tracking else None
+    return train(config,data_root,OUTPUT_PATH,encoder_checkpoint or None,tracking_uri,commit=output_volume.commit)

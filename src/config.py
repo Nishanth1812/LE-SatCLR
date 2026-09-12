@@ -4,7 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class Config:
     stage: str = 'simclr'
-    epochs: int = 20
+    epochs: int = 100
     batch_size: int = 128
     label_percent: int = 1
     policy: str = 'standard'
