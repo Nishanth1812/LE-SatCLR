@@ -10,3 +10,7 @@ export function formatDuration(seconds: number) {
 export function progressPercent(done: number, total: number) {
   return total ? Math.min(100, Math.max(0, Math.round((done / total) * 100))) : 0;
 }
+
+export function isEvaluationPending(state: string) {
+  return state === "starting" || state === "running";
+}
