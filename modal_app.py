@@ -81,9 +81,12 @@ def main(stage: str = 'setup', epochs: int = 0, batch_size: int = 0,
 
 @app.function(image=image, gpu='L40S', timeout=5*60*60, secrets=[mlflow_secret],
               volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
-def downstream_remote(epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope,isolated_tracking=False):
+def downstream_remote(epochs: int, batch_size: int, label_percent: int, encoder_checkpoint: str,
+                      max_batches: int, policy: str, ssl_scope: str, isolated_tracking: bool = False):
     """Run probe, finetune and baseline for one label budget from the same SSL checkpoint."""
     from src.config import resolve_batch_size, resolve_epochs
+    epochs, batch_size = int(epochs), int(batch_size)
+    label_percent, max_batches = int(label_percent), int(max_batches)
     if label_percent not in (1,10):
         raise ValueError('Label budget must be 1 or 10')
     if not encoder_checkpoint:
@@ -100,13 +103,16 @@ def downstream_remote(epochs,batch_size,label_percent,encoder_checkpoint,max_bat
 
 @app.function(image=image, gpu='L40S', timeout=5*60*60, secrets=[mlflow_secret],
               volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
-def train_remote(stage,epochs,batch_size,label_percent,encoder_checkpoint,max_batches,policy,ssl_scope,isolated_tracking=False):
+def train_remote(stage: str, epochs: int, batch_size: int, label_percent: int, encoder_checkpoint: str,
+                 max_batches: int, policy: str, ssl_scope: str, isolated_tracking: bool = False):
     from pathlib import Path
     import zipfile
     from src.config import Config, resolve_batch_size, resolve_epochs
     from src.training import train
-    epochs = resolve_epochs(stage,epochs)
-    batch_size = resolve_batch_size(stage,batch_size)
+    epochs = resolve_epochs(stage, int(epochs) if isinstance(epochs, str) else epochs)
+    batch_size = resolve_batch_size(stage, int(batch_size) if isinstance(batch_size, str) else batch_size)
+    label_percent = int(label_percent) if isinstance(label_percent, str) else label_percent
+    max_batches = int(max_batches) if isinstance(max_batches, str) else max_batches
     if isolated_tracking and not max_batches:
         raise ValueError('Isolated tracking is only allowed for smoke tests')
     data_root = Path(VOLUME_PATH)/'eurosat'
