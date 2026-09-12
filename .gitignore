@@ -17,6 +17,8 @@ mlartifacts/
 *.pyc
 runs/
 *.tmp
+fetched/
+downloaded_models/
 .env
 .env.*
 *.pem
