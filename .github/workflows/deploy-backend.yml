@@ -1,0 +1,22 @@
+name: Deploy backend to Modal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - modal_app.py
+      - src/**
+      - pyproject.toml
+      - uv.lock
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Modal (supersedes the previous deployment)
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: uvx modal@1.2.1 deploy modal_app.py
