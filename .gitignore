@@ -1,0 +1,18 @@
+data/
+checkpoints/
+results/
+mlruns/
+__pycache__/
+*.crdownload
+*.zip
+.venv/
+.vscode/
+Dataset/
+outputs/
+mlartifacts/
+*.db
+*.pt
+*.pth
+*.ckpt
+*.pyc
+ runs/
