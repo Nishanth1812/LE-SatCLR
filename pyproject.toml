@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.141.1",
     "matplotlib>=3.11.2",
     "mlflow>=3.16.0",
     "modal==1.2.1",
@@ -14,4 +15,5 @@ dependencies = [
     "torch==2.14.0",
     "torchvision==0.29.0",
     "umap-learn>=0.5.12",
+    "uvicorn>=0.52.4",
 ]
