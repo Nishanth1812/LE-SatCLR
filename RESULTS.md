@@ -1,9 +1,20 @@
-# LE-SatCLR Results (2026-09-12)
+# LE-SatCLR Results
 
-Hardware: Modal L40S (SSL) + A10G rerun for 1% downstream. Seed 42.
-Protocol: transductive (`ssl_scope=all`). Augmentation policy: `standard`.
-All numbers below are measured test/val metrics from Modal runs, not estimates.
-Checkpoints and logs persist in the `le-satclr-outputs` volume.
+**Evaluation date:** 2026-09-12  
+**Protocol:** Transductive SimCLR pretraining (`ssl_scope=all`) with standard augmentation and seed 42.  
+**Infrastructure:** Modal L40S for SSL pretraining; A10G for the 1% downstream rerun.  
+**Reproducibility:** Checkpoints and run logs are retained in the `le-satclr-outputs` volume.
+
+## Executive summary
+
+All values in this report are measured validation or held-out test metrics from
+Modal runs. SimCLR pretraining materially improves label efficiency over a
+supervised ResNet-18 trained from scratch.
+
+| Label budget | Best method | Test accuracy | Improvement over scratch |
+|---|---|---:|---:|
+| 1% (270 labels) | SimCLR + fine-tuning | **78.59%** | **+14.37pp** |
+| 10% (2,700 labels) | SimCLR + fine-tuning | **87.33%** | **+5.59pp** |
 
 ## Stage 1 — SimCLR pretraining (unlabeled, 100 epochs, batch 128)
 
@@ -26,7 +37,7 @@ were skipped via `grad_nonfinite_skipped` instead of crashing.
 | SimCLR + Linear probe (frozen) | 0.7663 | 0.8244 |
 | SimCLR + Fine-tuning | **0.7859** | **0.8733** |
 
-SSL pretraining beats scratch by **+14.4pp @ 1%** and **+5.6pp @ 10%**.
+SSL pretraining beats scratch by **+14.4pp at 1%** and **+5.6pp at 10%**.
 
 ## Full test metrics
 
@@ -80,11 +91,6 @@ Checkpoints (`/outputs/models/...`):
 | SeaLake (300) | 0.967 | 0.977 | 0.877 |
 
 Hardest classes: Highway and PermanentCrop at both budgets. Fine-tuning gains
-most over scratch on River (+32pp @ 1%), Pasture (+30pp @ 1%),
-HerbaceousVegetation (+29pp @ 1%), Industrial (+11pp @ 10%) and SeaLake (+10pp @ 10%).
-
-## Still pending
-
-- `uv run python -m src.report` figures (UMAP, accuracy-vs-budget curve,
-  confusion figures, nearest-neighbor panels, `comparison.csv`) once outputs
-  are pulled locally.
+most over scratch on River (+32pp at 1%), Pasture (+30pp at 1%),
+HerbaceousVegetation (+29pp at 1%), Industrial (+11pp at 10%), and SeaLake
+(+10pp at 10%).
