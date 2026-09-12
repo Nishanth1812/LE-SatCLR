@@ -15,4 +15,5 @@ mlartifacts/
 *.pth
 *.ckpt
 *.pyc
- runs/
+runs/
+*.tmp
