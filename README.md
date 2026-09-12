@@ -1,14 +1,10 @@
 # LE-SatCLR
 Label-Efficient Satellite Classification using Contrastive Learning
 
-Architecture: [docs/architecture.md](docs/architecture.md).
-References: [docs/sources.md](docs/sources.md).
-
 ## Setup and verification
 
 ```powershell
 uv sync --frozen
-uv run python -m unittest discover -s tests -v
 uv run modal run modal_app.py --stage simclr --epochs 1 --batch-size 8 --max-batches 2
 ```
 
