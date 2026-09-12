@@ -12,6 +12,7 @@ import numpy as np
 import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
 
@@ -198,45 +199,49 @@ class EvaluationRequest(BaseModel):
     sampleLimit: int = Field(default=0, ge=0)
 
 
+def create_app(service, web_dist=None):
+    dashboard = FastAPI(title="LE-SatCLR Dashboard", docs_url=None, redoc_url=None)
+
+    @dashboard.middleware("http")
+    async def security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
+    @dashboard.get("/api/status")
+    def get_status():
+        return service.status()
+
+    @dashboard.post("/api/evaluations", status_code=202)
+    def start_evaluation(request: EvaluationRequest):
+        try:
+            return service.start(request.sampleLimit)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from None
+
+    @dashboard.get("/api/evaluations/current")
+    def current_evaluation():
+        return service.current()
+
+    @dashboard.get("/api/test-images/{dataset_index}")
+    def test_image(dataset_index: int):
+        try:
+            return FileResponse(service.test_image(dataset_index))
+        except (PermissionError, IndexError, OSError, ValueError, json.JSONDecodeError):
+            raise HTTPException(404, "Test image not found") from None
+
+    web_dist = Path(web_dist) if web_dist else None
+    if web_dist and (web_dist / "index.html").is_file():
+        dashboard.mount("/", StaticFiles(directory=web_dist, html=True), name="dashboard")
+    return dashboard
+
+
 service = DashboardService()
-app = FastAPI(title="LE-SatCLR Dashboard", docs_url=None, redoc_url=None)
-
-
-@app.middleware("http")
-async def security_headers(request, call_next):
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Referrer-Policy"] = "no-referrer"
-    return response
-
-
-@app.get("/api/status")
-def get_status():
-    return service.status()
-
-
-@app.post("/api/evaluations", status_code=202)
-def start_evaluation(request: EvaluationRequest):
-    try:
-        return service.start(request.sampleLimit)
-    except ValueError as error:
-        raise HTTPException(422, str(error)) from None
-    except RuntimeError as error:
-        raise HTTPException(409, str(error)) from None
-
-
-@app.get("/api/evaluations/current")
-def current_evaluation():
-    return service.current()
-
-
-@app.get("/api/test-images/{dataset_index}")
-def test_image(dataset_index: int):
-    try:
-        return FileResponse(service.test_image(dataset_index))
-    except (PermissionError, IndexError, OSError, ValueError, json.JSONDecodeError):
-        raise HTTPException(404, "Test image not found") from None
+app = create_app(service, Path.cwd() / "web/dist")
 
 
 def main():

@@ -17,3 +17,8 @@ dependencies = [
     "umap-learn>=0.5.12",
     "uvicorn>=0.52.4",
 ]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.12.0",
+]

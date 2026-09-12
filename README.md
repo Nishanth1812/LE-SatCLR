@@ -12,6 +12,40 @@ uv run python -m unittest discover -s tests -v
 uv run python -m modal run modal_app.py --stage simclr --epochs 1 --batch-size 8 --max-batches 2
 ```
 
+## Final-model dashboard
+
+The dashboard evaluates a trained `probe`, `finetune`, or `baseline` checkpoint
+against the saved EuroSAT test split. It never substitutes mock predictions when
+a checkpoint is unavailable. The newest classifier checkpoint under
+`outputs/models` or `mlartifacts` is selected automatically; set an explicit one
+when needed:
+
+```powershell
+$env:LE_SATCLR_CHECKPOINT = "C:\path\to\finetune_best.pt"
+```
+
+For frontend development, run the API and Vite in separate terminals:
+
+```powershell
+uv run uvicorn src.dashboard:app --reload
+cd web
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`. For the single-process demo build:
+
+```powershell
+cd web
+npm install
+npm run build
+cd ..
+uv run python -m src.dashboard
+```
+
+Then open `http://127.0.0.1:8000`. The interface reports exactly which of the
+dataset, saved split, or final checkpoint is missing if it cannot start a run.
+
 The existing Modal Secret `le-satclr-mlflow` supplies `MLFLOW_TRACKING_URI`.
 Keep the MLflow server and Cloudflare tunnel running. The data Volume is
 `le-satclr-data` at `/vol`; the outputs Volume is `le-satclr-outputs` at `/outputs`.

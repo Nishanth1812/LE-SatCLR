@@ -6,9 +6,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import torch
+from fastapi.testclient import TestClient
 from PIL import Image
 
-from src.dashboard import DashboardService, discover_checkpoint
+from src.dashboard import DashboardService, create_app, discover_checkpoint
 
 
 def checkpoint_state(stage):
@@ -87,15 +88,34 @@ class DashboardTests(unittest.TestCase):
             (root / "Dataset/EuroSAT_RGB/AnnualCrop").mkdir(parents=True)
             service = DashboardService(root=root)
 
-            with patch.object(service, "_evaluate", side_effect=RuntimeError("private path")):
-                service.start(0)
-                for _ in range(100):
-                    if service.current()["state"] != "running":
-                        break
-                    time.sleep(0.01)
+            with self.assertLogs("src.dashboard", level="ERROR"), \
+                 patch.object(service, "_evaluate", side_effect=RuntimeError("private path")):
+                    service.start(0)
+                    for _ in range(100):
+                        if service.current()["state"] != "running":
+                            break
+                        time.sleep(0.01)
 
             self.assertEqual(service.current()["state"], "failed")
             self.assertEqual(service.current()["error"], "Evaluation failed. Check the server log.")
+
+    def test_app_serves_api_and_built_frontend_with_security_headers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            split = root / "outputs/results/splits_seed42.json"
+            split.parent.mkdir(parents=True)
+            split.write_text(json.dumps({"test": [0]}), encoding="utf-8")
+            web_dist = root / "web/dist"
+            web_dist.mkdir(parents=True)
+            (web_dist / "index.html").write_text("<h1>Dashboard</h1>", encoding="utf-8")
+            client = TestClient(create_app(DashboardService(root=root), web_dist))
+
+            status = client.get("/api/status")
+            page = client.get("/")
+
+            self.assertEqual(status.status_code, 200)
+            self.assertEqual(status.headers["x-content-type-options"], "nosniff")
+            self.assertIn("Dashboard", page.text)
 
 
 if __name__ == "__main__":
