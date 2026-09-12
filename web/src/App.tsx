@@ -81,7 +81,7 @@ function ConfusionMatrix({ result }: { result: Result }) {
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [job, setJob] = useState<Job>({ state: "idle", progress: { done: 0, total: 0 } });
-  const [sampleLimit, setSampleLimit] = useState(100);
+  const [sampleLimit, setSampleLimit] = useState(25);
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [selectedCheckpoint, setSelectedCheckpoint] = useState("");
   const [error, setError] = useState("");
@@ -121,6 +121,7 @@ export default function App() {
 
   const result = job.result;
   const progress = progressPercent(job.progress.done, job.progress.total);
+  const isEstimate = Boolean(result && status && result.sampleCount < status.testSamples);
 
   return (
     <>
@@ -160,12 +161,10 @@ export default function App() {
                 {item.stage} · {item.labelPercent === null ? "labels n/a" : `${item.labelPercent}% labels`} ({item.name})
               </option>)}
             </select>
-            <div className="control-label"><label htmlFor="sample-limit">Evaluation size</label><span>Real test images only</span></div>
-            <select id="sample-limit" value={sampleLimit} onChange={(event) => setSampleLimit(Number(event.target.value))} disabled={job.state === "running"}>
-              <option value={0}>Full test split · 2,700 images</option>
-              <option value={100}>Quick check · 100 images</option>
-              <option value={500}>Extended check · 500 images</option>
-            </select>
+            <div className="control-label"><label htmlFor="sample-limit">Images to evaluate</label><span>Random held-out images</span></div>
+            <input id="sample-limit" type="number" min={0} max={status?.testSamples} value={sampleLimit}
+              onChange={(event) => setSampleLimit(Math.max(0, Number(event.target.value)))} disabled={job.state === "running"} />
+            <p className="control-note">Use 0 for the full test split. Smaller runs are random estimates.</p>
             <button className="run-button" onClick={runEvaluation} disabled={!status?.ready || job.state === "running"}>
               <span>{job.state === "running" ? `Evaluating ${progress}%` : result ? "Run again" : "Evaluate final model"}</span><span aria-hidden="true">↗</span>
             </button>
@@ -176,7 +175,7 @@ export default function App() {
         </section>
 
         {result ? <section className="results" aria-live="polite">
-          <div className="section-heading"><div><p className="eyebrow">LATEST RUN · {result.checkpoint}</p><h2>Test performance</h2><p className="section-summary">Accuracy is the share of test images the model labeled correctly — higher is better. Compare the 1% and 10% models to see what extra labels buy.</p></div><p>{result.sampleCount.toLocaleString()} images · {formatDuration(result.durationSeconds)}</p></div>
+          <div className="section-heading"><div><p className="eyebrow">LATEST RUN · {result.checkpoint}</p><h2>Test performance</h2><p className="section-summary">Accuracy is the share of test images the model labeled correctly — higher is better. Compare the 1% and 10% models to see what extra labels buy.</p></div><p>{result.sampleCount.toLocaleString()} images · {formatDuration(result.durationSeconds)}{isEstimate ? " · random estimate" : " · full split"}</p></div>
           <div className="metrics-row"><Metric label="Accuracy" value={result.metrics.accuracy} lead /><Metric label="Macro F1" value={result.metrics.macroF1} /><Metric label="Precision" value={result.metrics.precision} /><Metric label="Recall" value={result.metrics.recall} /></div>
 
           <div className="analysis-grid">

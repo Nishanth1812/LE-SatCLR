@@ -123,7 +123,7 @@ def train_remote(stage: str, epochs: int, batch_size: int, label_percent: int, e
     return train(config,data_root,OUTPUT_PATH,encoder_checkpoint or None,tracking_uri,commit=output_volume.commit)
 
 
-@app.function(image=image, timeout=30*60,
+@app.function(image=image, timeout=30*60, min_containers=1,
               volumes={VOLUME_PATH:data_volume, OUTPUT_PATH:output_volume})
 @modal.asgi_app()
 def dashboard_app():

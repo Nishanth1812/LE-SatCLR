@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import os
+import random
 import threading
 import time
 from datetime import UTC, datetime
@@ -22,6 +23,10 @@ from .models import Classifier
 
 log = logging.getLogger(__name__)
 CLASSIFIER_STAGES = {"probe", "finetune", "baseline"}
+
+
+def select_evaluation_indices(indices, sample_limit):
+    return indices if not sample_limit else random.sample(indices, sample_limit)
 
 
 def _checkpoint_info(path):
@@ -186,8 +191,7 @@ class DashboardService:
         started = time.monotonic()
         dataset = catalog(self.data_root)
         indices = self._test_indices()
-        if sample_limit:
-            indices = indices[:sample_limit]
+        indices = select_evaluation_indices(indices, sample_limit)
         checkpoint = Path(checkpoint) if checkpoint else discover_checkpoint(
             self.root, self.checkpoint_override, self.model_dirs)
         state = _checkpoint_info(checkpoint)
