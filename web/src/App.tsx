@@ -24,6 +24,7 @@ type Result = {
 type Job = {
   state: "idle" | "running" | "complete" | "failed";
   progress: { done: number; total: number };
+  startedAt?: string;
   error?: string;
   result?: Result;
 };
@@ -71,8 +72,9 @@ function ConfusionMatrix({ result }: { result: Result }) {
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [job, setJob] = useState<Job>({ state: "idle", progress: { done: 0, total: 0 } });
-  const [sampleLimit, setSampleLimit] = useState(0);
+  const [sampleLimit, setSampleLimit] = useState(100);
   const [error, setError] = useState("");
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     Promise.all([api<Status>("/api/status"), api<Job>("/api/evaluations/current")])
@@ -83,10 +85,15 @@ export default function App() {
   useEffect(() => {
     if (job.state !== "running") return;
     const timer = window.setInterval(() => {
+      setNow(Date.now());
       api<Job>("/api/evaluations/current").then(setJob).catch((reason) => setError(reason.message));
     }, 750);
     return () => window.clearInterval(timer);
   }, [job.state]);
+
+  const elapsedSeconds = job.startedAt
+    ? Math.max(0, Math.round((now - Date.parse(job.startedAt)) / 1000))
+    : 0;
 
   async function runEvaluation() {
     setError("");
@@ -114,9 +121,9 @@ export default function App() {
       <main id="top">
         <section className="masthead">
           <div className="masthead-copy">
-            <p className="eyebrow">HELD-OUT EVALUATION / EURO<span>SAT</span></p>
-            <h1>Proof,<br />not promise.</h1>
-            <p className="lede">Put the final land-cover classifier through its untouched test split. Every score here comes from a real image and a real forward pass.</p>
+            <p className="eyebrow">HELD-OUT TEST SET · 2,700 EURO<span>SAT</span> IMAGES</p>
+            <h1>Measure the<br />final model.</h1>
+            <p className="lede">Run the trained land-cover classifier on the untouched test split and see accuracy, per-class recall, and sample predictions.</p>
             <div className="dataset-facts" aria-label="Evaluation facts">
               <span><b>10</b> land-cover classes</span><span><b>64²</b> RGB imagery</span><span><b>42</b> fixed seed</span>
             </div>
@@ -144,7 +151,7 @@ export default function App() {
             <button className="run-button" onClick={runEvaluation} disabled={!status?.ready || job.state === "running"}>
               <span>{job.state === "running" ? `Evaluating ${progress}%` : result ? "Run again" : "Evaluate final model"}</span><span aria-hidden="true">↗</span>
             </button>
-            {job.state === "running" && <div className="progress-wrap"><div className="progress-status" aria-live="polite"><span>Forward pass in progress</span><b>{job.progress.done.toLocaleString()} / {job.progress.total.toLocaleString()}</b></div><div className="progress-track" role="progressbar" aria-label="Evaluation progress" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }} /></div></div>}
+            {job.state === "running" && <div className="progress-wrap"><div className="progress-status" aria-live="polite"><span>Forward pass in progress · {elapsedSeconds}s elapsed</span><b>{job.progress.done.toLocaleString()} / {job.progress.total.toLocaleString()}</b></div><div className="progress-track" role="progressbar" aria-label="Evaluation progress" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }} /></div></div>}
             {(error || job.error) && <p className="error-message" role="alert">{error || job.error}</p>}
             {status && !status.checkpoint && <p className="setup-note">Set <code>LE_SATCLR_CHECKPOINT</code> to your final <code>.pt</code> file, then restart the API.</p>}
           </aside>
@@ -166,7 +173,7 @@ export default function App() {
             <div className="sample-image"><img src={`${API_BASE}/api/test-images/${sample.datasetIndex}`} alt={`EuroSAT test image labeled ${sample.actual}`} loading="lazy" /><span className={sample.isCorrect ? "verdict correct" : "verdict"}>{sample.isCorrect ? "MATCH" : "MISS"}</span></div>
             <div className="sample-copy"><small>MODEL SAYS</small><strong>{sample.predicted}</strong><span>{formatPercent(sample.confidence)} confidence</span><span className="truth">Truth · {sample.actual}</span></div>
           </article>)}</div>
-        </section> : <section className="waiting" aria-label="Awaiting evaluation"><div className="waiting-number">01</div><div><p className="eyebrow">RESULTS DECK</p><h2>Your evidence lands here.</h2><p>Connect the final checkpoint and run the untouched test split to reveal metrics, class-level errors, and individual predictions.</p><ol className="waiting-flow"><li><b>01</b><span>Connect a classifier checkpoint</span></li><li><b>02</b><span>Run the held-out test split</span></li><li><b>03</b><span>Inspect errors and predictions</span></li></ol></div></section>}
+        </section> : <section className="waiting" aria-label="Awaiting evaluation"><div className="waiting-number">01</div><div><p className="eyebrow">RESULTS DECK</p><h2>Results appear here.</h2><p>Connect the final checkpoint and run the untouched test split to see metrics, class-level errors, and individual predictions.</p><ol className="waiting-flow"><li><b>01</b><span>Connect a classifier checkpoint</span></li><li><b>02</b><span>Run the held-out test split</span></li><li><b>03</b><span>Inspect errors and predictions</span></li></ol></div></section>}
       </main>
       <footer><span>LE-SatCLR</span><span>LABEL-EFFICIENT SATELLITE CLASSIFICATION</span><span>SEED 42</span></footer>
     </>
