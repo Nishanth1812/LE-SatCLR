@@ -75,8 +75,10 @@ def splits(dataset, path):
         str(Path(p).relative_to(dataset.root)) for p,_ in dataset.samples).encode()).hexdigest()
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists() and json.loads(path.read_text()) != result:
-        raise ValueError('Saved split differs from dataset; use a new output directory')
+    if path.exists():
+        if json.loads(path.read_text()) != result:
+            raise ValueError('Saved split differs from dataset; use a new output directory')
+        return result
     path.write_text(json.dumps(result), encoding='utf-8')
     return result
 

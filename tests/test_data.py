@@ -14,7 +14,9 @@ class DataTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d)/'split.json'
             split = splits(dataset,path)
+            modified = path.stat().st_mtime_ns
             self.assertEqual(split,splits(dataset,path))
+            self.assertEqual(path.stat().st_mtime_ns, modified, 'Reusing splits must not rewrite shared files')
             self.assertEqual(len(split['labels1']),270)
             self.assertEqual(len(split['labels10']),2700)
             self.assertTrue(set(split['labels1']) <= set(split['labels10']) <= set(split['train']))

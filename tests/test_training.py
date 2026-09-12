@@ -35,6 +35,12 @@ class TrainingTests(unittest.TestCase):
                     same = all(torch.equal(v,checkpoint['encoder'][k]) for k,v in state['encoder'].items())
                     self.assertEqual(same,stage=='probe')
                     self.assertIn('macro_f1',summary['test'])
+                    if stage=='finetune': finetuned_path = summary['checkpoint']
             logs = list((out/'results').glob('*/*/training.log'))
             self.assertEqual(len(logs),7)
             self.assertTrue(all('run_finished' in p.read_text() for p in logs))
+            from src.report import report
+            report(out,root,ssl['checkpoint'],finetuned_path,max_samples=32)
+            self.assertEqual(len(list((out/'results'/'report').glob('*_umap.png'))),3)
+            self.assertEqual(len(list((out/'results'/'report').glob('*_retrieval.png'))),3)
+            self.assertFalse((out/'results'/'report'/'comparison.csv').exists())

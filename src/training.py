@@ -64,6 +64,9 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
                                  elapsed_seconds=round(time.monotonic()-start,2),**fields)))
 
     try:
+        os.environ.setdefault('MLFLOW_HTTP_REQUEST_TIMEOUT','15')
+        os.environ.setdefault('MLFLOW_HTTP_REQUEST_MAX_RETRIES','1')
+        event('tracking_connecting')
         mlflow.set_tracking_uri(tracking_uri or os.environ['MLFLOW_TRACKING_URI'])
         mlflow.set_experiment('le-satclr')
         with mlflow.start_run(run_name=name) as run:
