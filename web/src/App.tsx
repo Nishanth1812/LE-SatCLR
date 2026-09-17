@@ -267,6 +267,7 @@ export default function App() {
             </button>
             {isPending && <div className="progress-wrap"><div className="progress-status" aria-live="polite"><span>{job.state === "starting" ? `Contacting evaluation server · ${elapsedSeconds}s elapsed` : `Forward pass in progress · ${elapsedSeconds}s elapsed`}</span><b>{job.progress.done.toLocaleString()} / {job.progress.total.toLocaleString()} images</b></div><div className={job.state === "starting" ? "progress-track starting" : "progress-track"} role="progressbar" aria-label="Evaluation progress" aria-valuetext={job.state === "starting" ? "Starting evaluation" : `${progress}% complete`} aria-valuenow={job.state === "running" ? progress : undefined} aria-valuemin={0} aria-valuemax={100}><span style={job.state === "running" ? { width: `${progress}%` } : undefined} /></div></div>}
             {(error || job.error) && <p className="error-message" role="alert">{error || job.error}</p>}
+            {error && !status && <button type="button" className="retry-button" onClick={() => setConnectionRetry((attempt) => attempt + 1)}>Retry connection</button>}
             {status && !status.checkpoint && <p className="setup-note">Set <code>LE_SATCLR_CHECKPOINT</code> to your final <code>.pt</code> file, then restart the API.</p>}
           </aside>
         </section>
@@ -284,7 +285,7 @@ export default function App() {
 
           <div className="section-heading samples-heading"><div><p className="eyebrow">GROUND TRUTH CHECK</p><h2>Sample predictions</h2></div><p>A deterministic cross-section of the run</p></div>
           <div className="sample-grid">{result.samples.map((sample) => <article className="sample-card" key={sample.datasetIndex}>
-            <div className="sample-image"><img src={`${API_BASE}/api/test-images/${sample.datasetIndex}`} alt={`EuroSAT test image labeled ${sample.actual}`} loading="lazy" /><span className={sample.isCorrect ? "verdict correct" : "verdict"}>{sample.isCorrect ? "MATCH" : "MISS"}</span></div>
+            <div className="sample-image"><img src={`${API_BASE}/api/test-images/${sample.datasetIndex}`} alt={`EuroSAT test image labeled ${sample.actual}`} width={64} height={64} decoding="async" loading="lazy" /><span className={sample.isCorrect ? "verdict correct" : "verdict"}>{sample.isCorrect ? "MATCH" : "MISS"}</span></div>
             <div className="sample-copy"><small>MODEL SAYS</small><strong>{sample.predicted}</strong><span>{formatPercent(sample.confidence)} confidence</span><span className="truth">Truth · {sample.actual}</span></div>
           </article>)}</div>
         </section> : <section className="waiting" aria-label="Awaiting evaluation"><div className="waiting-number">01</div><div><p className="eyebrow">RESULTS DECK</p><h2>Results appear here.</h2><p>Connect the final checkpoint and run the untouched test split to see metrics, class-level errors, and individual predictions.</p><ol className="waiting-flow"><li><b>01</b><span>Connect a classifier checkpoint</span></li><li><b>02</b><span>Run the held-out test split</span></li><li><b>03</b><span>Inspect errors and predictions</span></li></ol></div></section>}

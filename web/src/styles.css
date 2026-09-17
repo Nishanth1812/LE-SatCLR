@@ -82,6 +82,9 @@ h1 { font-size: clamp(4rem, 10vw, 9rem); line-height: .82; letter-spacing: -.075
 .progress-status { display: flex; justify-content: space-between; gap: 1rem; margin-top: .8rem; color: #58675e; font: .62rem var(--mono); text-transform: uppercase; letter-spacing: .05em; }
 .progress-status b { color: #132019; font-weight: 600; }
 .setup-note, .error-message { font-size: .75rem; line-height: 1.5; margin: .85rem 0 0; }
+.retry-button { margin-top: .75rem; padding: .55rem .9rem; border: 1px solid #a7b0a8; background: transparent; color: #4b5b51; font: .68rem var(--mono); cursor: pointer; }
+.retry-button:hover { border-color: #557d1c; background: #dff2bd; color: #243910; }
+.protocol-note { margin: -1rem 0 1.5rem; color: #8b978f; font-size: .72rem; line-height: 1.55; max-width: 34rem; }
 .setup-note { color: #58675e; }
 .setup-note code { background: #d8ded7; padding: .1rem .25rem; }
 .error-message { color: #9e2e1d; font-weight: 600; }

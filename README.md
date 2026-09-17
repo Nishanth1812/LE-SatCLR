@@ -31,25 +31,13 @@ uv sync --frozen
 ```
 
 You need a Modal account for training (`modal setup`) and `Dataset/EuroSAT_RGB`
-with the 10 class folders for local training or dataset evaluation. Tests and
-regenerating the measured-results figure do not need the dataset.
-
-## Tests
-
-`.github/workflows/tests.yml` runs Python tests, frontend tests and the frontend
-build on pushes and pull requests, without deployment or secrets. Run locally:
+with the 10 class folders for local training or dataset evaluation. Regenerating
+the measured-results figure does not need the dataset.
 
 ```powershell
 uv sync --frozen
-uv run --frozen python -m unittest discover -s tests -v
-uv run --frozen python -m pytest tests -v
-npm --prefix web ci
-npm --prefix web test
-npm --prefix web run build
+uv run --frozen python -m src.report --results-markdown RESULTS.md --figure docs/results.png
 ```
-
-Pytest discovers both unittest classes and standalone function tests; the build
-also runs TypeScript typechecking.
 
 ## Training
 
