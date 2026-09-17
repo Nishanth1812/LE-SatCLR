@@ -3,6 +3,7 @@ checkpoints/
 results/
 mlruns/
 __pycache__/
+.pytest_cache/
 *.crdownload
 *.zip
 .venv/

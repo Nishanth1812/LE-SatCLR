@@ -8,16 +8,63 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
-from PIL import Image
-from sklearn.metrics.pairwise import cosine_similarity
-from umap import UMAP
 
-from .data import catalog, loader, seed_everything
-from .models import encoder
+
+def results_figure(results_markdown, figure):
+    text = Path(results_markdown).read_text(encoding='utf-8')
+    if 'Transductive SimCLR pretraining (`ssl_scope=all`)' not in text or 'seed 42' not in text:
+        raise ValueError('Expected transductive ssl_scope=all results with seed 42')
+    section = text.split('## Primary result — test accuracy at fixed label budgets\n',1)[1].split('\n## ',1)[0]
+    methods = {
+        'Supervised ResNet-18 from scratch': 'Supervised from scratch',
+        'SimCLR + Linear probe (frozen)': 'SimCLR + frozen probe',
+        'SimCLR + Fine-tuning': 'SimCLR + fine-tuning',
+    }
+    values = {}
+    for line in section.splitlines():
+        cells = [cell.strip().replace('**','') for cell in line.strip().strip('|').split('|')]
+        if cells[0] in methods:
+            if len(cells) != 3 or cells[0] in values:
+                raise ValueError('Expected one result per method at two label budgets')
+            scores = [float(value) for value in cells[1:]]
+            if not all(np.isfinite(score) and 0 <= score <= 1 for score in scores):
+                raise ValueError('Test accuracy must be finite and between zero and one')
+            values[cells[0]] = np.asarray(scores)*100
+    if values.keys() != methods.keys():
+        raise ValueError('Missing measured method in primary results table')
+    dest = Path(figure)
+    dest.parent.mkdir(parents=True,exist_ok=True)
+    with plt.rc_context({'font.family':'DejaVu Sans','font.size':11}):
+        fig,ax = plt.subplots(figsize=(10,6))
+        x = np.arange(2)
+        for i,((method,label),color) in enumerate(zip(methods.items(),('#65758b','#3478b8','#18866b'))):
+            bars = ax.bar(x+(i-1)*0.24,values[method],width=0.24,label=label,color=color)
+            ax.bar_label(bars,labels=[f'{score:.2f}%' for score in values[method]],padding=4,fontsize=10)
+        ax.set(xticks=x,xticklabels=['1% (270 labels)','10% (2,700 labels)'],
+               xlabel='Label budget (% of the full EuroSAT dataset)',ylabel='Test accuracy (%)',ylim=(0,100))
+        ax.set_axisbelow(True)
+        ax.grid(axis='y',alpha=0.2)
+        ax.spines[['top','right']].set_visible(False)
+        ax.legend(loc='lower right',framealpha=1)
+        fig.suptitle('EuroSAT: measured label efficiency',fontsize=17,fontweight='bold',y=0.97)
+        ax.set_title('Single seed (42) · Transductive SimCLR · ssl_scope=all',fontsize=11,pad=15)
+        fig.text(0.5,0.065,'Source: RESULTS.md · Standard augmentation · No multi-seed uncertainty estimates',ha='center',fontsize=10)
+        fig.text(0.5,0.03,'SSL includes unlabeled validation/test images; not an inductive generalization result.',ha='center',fontsize=10)
+        fig.tight_layout(rect=(0,0.1,1,0.93))
+        fig.savefig(dest,dpi=160)
+        plt.close(fig)
+    return dest
 
 
 def report(output_root, data_root, ssl_checkpoint, finetuned_checkpoint, max_samples=0):
+    import torch
+    from PIL import Image
+    from sklearn.metrics.pairwise import cosine_similarity
+    from umap import UMAP
+
+    from .data import catalog, loader, seed_everything
+    from .models import encoder
+
     seed_everything()
     root = Path(output_root)
     dest = root/'results'/'report'
@@ -101,7 +148,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--output-root',default='outputs')
     parser.add_argument('--data-root',default='Dataset/EuroSAT_RGB')
-    parser.add_argument('--ssl-checkpoint',required=True)
-    parser.add_argument('--finetuned-checkpoint',required=True)
+    parser.add_argument('--ssl-checkpoint')
+    parser.add_argument('--finetuned-checkpoint')
     parser.add_argument('--max-samples',type=int,default=0)
-    report(**vars(parser.parse_args()))
+    parser.add_argument('--results-markdown',help='Plot the measured primary table without datasets or checkpoints')
+    parser.add_argument('--figure',default='docs/results.png')
+    args = vars(parser.parse_args())
+    markdown = args.pop('results_markdown')
+    figure = args.pop('figure')
+    if markdown:
+        results_figure(markdown,figure)
+    elif not args['ssl_checkpoint'] or not args['finetuned_checkpoint']:
+        parser.error('--ssl-checkpoint and --finetuned-checkpoint are required unless --results-markdown is used')
+    else:
+        report(**args)
