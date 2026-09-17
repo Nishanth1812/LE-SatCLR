@@ -96,7 +96,7 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
             indices = (list(range(len(dataset))) if config.ssl_scope=='all' else split['train']) if paired else split[f'labels{config.label_percent}']
             batches = loader(dataset,indices,config.batch_size,True,paired,config.policy,config.workers)
             if len(batches) == 0: raise ValueError('Batch size exceeds available pretraining samples')
-            validation = loader(dataset,split['val'],config.batch_size)
+            validation = loader(dataset,split['val'],config.batch_size,paired,paired,config.policy,config.workers)
             model = SimCLR(config.hidden_dim,config.projection_dim) if paired else Classifier(config.stage=='probe')
             if config.stage in ('probe','finetune'):
                 if not encoder_checkpoint: raise ValueError('An SSL checkpoint is required')
@@ -137,23 +137,24 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
                     if not torch.isfinite(loss): raise FloatingPointError('Nonfinite training loss')
                     scaler.scale(loss).backward()
                     scaler.unscale_(optimizer)
-                    if not all(torch.isfinite(p.grad).all() for p in model.parameters() if p.grad is not None):
+                    total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(),max_norm=10.,error_if_nonfinite=False)
+                    if not torch.isfinite(total_norm):
                         event('grad_nonfinite_skipped',epoch=epoch+1,step=step,scale=scaler.get_scale())
                         scaler.update()
                         continue
-                    torch.nn.utils.clip_grad_norm_(model.parameters(),max_norm=10.,error_if_nonfinite=False)
                     scaler.step(optimizer)
                     scaler.update()
                     total += loss.item()*len(x)
                     seen += len(x)
                     if step % 20 == 0: event('batch_finished',epoch=epoch+1,step=step,loss=loss.item())
+                if seen == 0: raise FloatingPointError('No successful training samples this epoch')
                 metrics = {'train_loss':total/seen,'learning_rate':optimizer.param_groups[0]['lr']}
                 if paired:
                     # Label-free retrieval accuracy: match the two views of each validation image.
                     model.eval()
                     correct, count = 0,0
                     with torch.no_grad():
-                        for step,(a,b) in enumerate(loader(dataset,split['val'],config.batch_size,True,True,config.policy)):
+                        for step,(a,b) in enumerate(validation):
                             if config.max_batches and step >= config.max_batches: break
                             _,z = model(torch.cat((a,b)).to(device, non_blocking=True))
                             n = len(a)
@@ -161,6 +162,7 @@ def train(config, data_root, output_root, encoder_checkpoint=None, tracking_uri=
                             target = torch.arange(n,device=device)
                             correct += ((similarity.argmax(1)==target).sum()+(similarity.argmax(0)==target).sum()).item()
                             count += 2*n
+                    if count == 0: raise ValueError('No validation samples available')
                     metrics['val_pair_accuracy'] = correct/count
                     score = -metrics['train_loss']
                 else:

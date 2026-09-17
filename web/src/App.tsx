@@ -1,5 +1,5 @@
-import { useEffect, useState, type CSSProperties } from "react";
-import { formatDuration, formatPercent, isEvaluationPending, progressPercent } from "./lib";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { formatApiError, formatDuration, formatPercent, isEvaluationPending, parseSampleLimit, pollDelayMs, progressPercent, sampleLimitError } from "./lib";
 
 type Status = {
   ready: boolean;
@@ -41,12 +41,28 @@ type Job = {
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${url}`, init);
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || "The dashboard API did not respond.");
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  init?.signal?.addEventListener("abort", abort, { once: true });
+  if (init?.signal?.aborted) controller.abort();
+  let timedOut = false;
+  const timer = window.setTimeout(() => { timedOut = true; controller.abort(); }, 15000);
+  try {
+    const response = await fetch(`${API_BASE}${url}`, { ...init, signal: controller.signal });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(formatApiError(body?.detail, "The dashboard API did not respond. Please try again."));
+    }
+    return await response.json();
+  } catch (reason) {
+    if (init?.signal?.aborted) throw reason;
+    if (timedOut) throw new Error("The request timed out after 15 seconds. Please try again.");
+    if (reason instanceof TypeError) throw new Error("Could not connect to the dashboard API. Check your connection and try again.");
+    throw reason;
+  } finally {
+    window.clearTimeout(timer);
+    init?.signal?.removeEventListener("abort", abort);
   }
-  return response.json();
 }
 
 function Metric({ label, value, lead = false }: { label: string; value: number; lead?: boolean }) {
@@ -62,13 +78,15 @@ function ConfusionMatrix({ result }: { result: Result }) {
   return (
     <div className="matrix-wrap" tabIndex={0} aria-label="Confusion matrix; rows are actual and columns are predicted classes">
       <table className="matrix">
-        <thead><tr><th aria-label="Actual versus predicted" className="matrix-corner">A\P</th>{result.classes.map((name) => <th key={name} title={name}>{name.slice(0, 3)}</th>)}</tr></thead>
+        <caption>Confusion matrix: actual classes in rows, predicted classes in columns.</caption>
+        <thead><tr><th scope="col" aria-label="Actual versus predicted" className="matrix-corner">A\P</th>{result.classes.map((name) => <th key={name} scope="col" title={name} aria-label={`Predicted ${name}`}>{name.slice(0, 3)}</th>)}</tr></thead>
         <tbody>{result.confusionMatrix.map((row, rowIndex) => (
           <tr key={result.classes[rowIndex]}>
-            <th title={result.classes[rowIndex]}>{result.classes[rowIndex].slice(0, 3)}</th>
+            <th scope="row" title={result.classes[rowIndex]} aria-label={`Actual ${result.classes[rowIndex]}`}>{result.classes[rowIndex].slice(0, 3)}</th>
             {row.map((value, columnIndex) => (
               <td key={columnIndex} className={rowIndex === columnIndex ? "correct-cell" : ""}
                   style={{ "--heat": value / max } as CSSProperties}
+                  aria-label={`Actual ${result.classes[rowIndex]}, predicted ${result.classes[columnIndex]}: ${value}`}
                   title={`${result.classes[rowIndex]} → ${result.classes[columnIndex]}: ${value}`}>{value}</td>
             ))}
           </tr>
@@ -81,51 +99,112 @@ function ConfusionMatrix({ result }: { result: Result }) {
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [job, setJob] = useState<Job>({ state: "idle", progress: { done: 0, total: 0 } });
-  const [sampleLimit, setSampleLimit] = useState(25);
+  const [sampleLimit, setSampleLimit] = useState("25");
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [selectedCheckpoint, setSelectedCheckpoint] = useState("");
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  const [connectionRetry, setConnectionRetry] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submission = useRef<AbortController | null>(null);
+
+  useEffect(() => () => { submission.current?.abort(); }, []);
 
   useEffect(() => {
-    Promise.all([api<Status>("/api/status"), api<Job>("/api/evaluations/current"), api<Checkpoint[]>("/api/checkpoints")])
-      .then(([nextStatus, nextJob, nextCheckpoints]) => { setStatus(nextStatus); setJob(nextJob); setCheckpoints(nextCheckpoints); })
-      .catch((reason) => setError(reason.message));
-  }, []);
+    const controller = new AbortController();
+    const init = { signal: controller.signal };
+    setError("");
+    Promise.all([api<Status>("/api/status", init), api<Job>("/api/evaluations/current", init), api<Checkpoint[]>("/api/checkpoints", init)])
+      .then(([nextStatus, nextJob, nextCheckpoints]) => {
+        if (controller.signal.aborted) return;
+        setStatus(nextStatus); setJob(nextJob); setCheckpoints(nextCheckpoints);
+      })
+      .catch((reason) => {
+        if (controller.signal.aborted) return;
+        setError(reason instanceof Error ? reason.message : "The dashboard API did not respond.");
+        controller.abort();
+      });
+    return () => controller.abort();
+  }, [connectionRetry]);
 
   useEffect(() => {
     if (!isEvaluationPending(job.state)) return;
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-      if (job.state === "running") {
-        api<Job>("/api/evaluations/current").then(setJob).catch((reason) => setError(reason.message));
-      }
-    }, 750);
-    return () => window.clearInterval(timer);
+    setNow(Date.now());
+    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(clock);
   }, [job.state]);
+
+  useEffect(() => {
+    if (!isEvaluationPending(job.state) || isSubmitting) return;
+    let timer = 0;
+    let failures = 0;
+    const controller = new AbortController();
+    const poll = async () => {
+      if (controller.signal.aborted) return;
+      let failed = false;
+      try {
+        const nextJob = await api<Job>("/api/evaluations/current", { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        failures = 0;
+        setError("");
+        setJob(nextJob);
+        if (!isEvaluationPending(nextJob.state)) return;
+      } catch (reason) {
+        if (controller.signal.aborted) return;
+        failed = true;
+        setError(reason instanceof Error ? reason.message : "The dashboard API did not respond.");
+      }
+      const delay = pollDelayMs(failures, failed, document.hidden);
+      if (failed) failures += 1;
+      if (!controller.signal.aborted) timer = window.setTimeout(poll, delay);
+    };
+    void poll();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [job.state, isSubmitting]);
 
   const elapsedSeconds = job.startedAt
     ? Math.max(0, Math.round((now - Date.parse(job.startedAt)) / 1000))
     : 0;
 
+  const parsedSampleLimit = parseSampleLimit(sampleLimit);
+  const validationError = sampleLimitError(sampleLimit, status?.testSamples);
+  const model = selectedCheckpoint ? checkpoints.find((item) => item.name === selectedCheckpoint) : status?.checkpoint;
+
   async function runEvaluation() {
+    if (!status?.ready || validationError || parsedSampleLimit === null || isEvaluationPending(job.state) || submission.current) return;
+    const controller = new AbortController();
+    submission.current = controller;
+    setIsSubmitting(true);
     setError("");
     setJob((current) => ({
       ...current,
       state: "starting",
       startedAt: new Date().toISOString(),
-      progress: { done: 0, total: sampleLimit || status?.testSamples || 0 },
+      error: undefined,
+      progress: { done: 0, total: parsedSampleLimit === 0 ? status.testSamples : parsedSampleLimit },
     }));
     try {
-      setJob(await api<Job>("/api/evaluations", {
+      const nextJob = await api<Job>("/api/evaluations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sampleLimit, checkpoint: selectedCheckpoint || null }),
-      }));
+        body: JSON.stringify({ sampleLimit: parsedSampleLimit, checkpoint: selectedCheckpoint || null }),
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted || submission.current !== controller) return;
+      setJob(nextJob);
     } catch (reason) {
+      if (controller.signal.aborted || submission.current !== controller) return;
       const message = reason instanceof Error ? reason.message : "Could not start evaluation.";
       setError(message);
       setJob((current) => ({ ...current, state: "failed", error: message }));
+    } finally {
+      if (!controller.signal.aborted && submission.current === controller) {
+        submission.current = null;
+        setIsSubmitting(false);
+      }
     }
   }
 
@@ -144,9 +223,10 @@ export default function App() {
       <main id="top">
         <section className="masthead">
           <div className="masthead-copy">
-            <p className="eyebrow">HELD-OUT TEST SET · 2,700 EURO<span>SAT</span> IMAGES</p>
+            <p className="eyebrow">TEST SPLIT · 2,700 EURO<span>SAT</span> IMAGES</p>
             <h1>Measure the<br />final model.</h1>
-            <p className="lede">Run the trained land-cover classifier on the untouched test split and see accuracy, per-class recall, and sample predictions.</p>
+            <p className="lede">Run the trained land-cover classifier on the test split and see accuracy, per-class recall, and sample predictions.</p>
+            <p className="protocol-note">The split is held out from labels only: transductive pretraining already saw these images unlabeled, so metrics reflect labeled evaluation on data the classifier never saw annotated.</p>
             <div className="dataset-facts" aria-label="Evaluation facts">
               <span><b>10</b> land-cover classes</span><span><b>64²</b> RGB imagery</span><span><b>42</b> fixed seed</span>
             </div>
@@ -173,14 +253,16 @@ export default function App() {
               </option>)}
             </select>
             <div className="control-label"><label htmlFor="sample-limit">Images to evaluate</label><span>Random held-out images</span></div>
-            <input id="sample-limit" type="number" min={0} max={status?.testSamples} value={sampleLimit}
-              onChange={(event) => setSampleLimit(Math.max(0, Number(event.target.value)))} disabled={isPending} />
-            <p className="control-note">Use 0 for the full test split. Smaller runs are random estimates.</p>
+            <input id="sample-limit" type="number" min={0} max={status?.testSamples} step={1} value={sampleLimit}
+              onChange={(event) => setSampleLimit(event.target.value)} disabled={isPending}
+              aria-invalid={Boolean(validationError)} aria-describedby={validationError ? "sample-limit-note sample-limit-error" : "sample-limit-note"} />
+            <p id="sample-limit-note" className="control-note">Use 0 for the full test split. Smaller runs are random estimates.</p>
+            {validationError && <p id="sample-limit-error" className="error-message state-message" aria-live="polite">{validationError}</p>}
             <div className="sample-presets" aria-label="Evaluation size shortcuts">
-              {[25, 100, 500].map((size) => <button key={size} type="button" className={sampleLimit === size ? "selected" : ""} onClick={() => setSampleLimit(size)} disabled={isPending}>{size} images</button>)}
-              <button type="button" className={sampleLimit === 0 ? "selected" : ""} onClick={() => setSampleLimit(0)} disabled={isPending}>Full split</button>
+              {[25, 100, 500].map((size) => <button key={size} type="button" className={parsedSampleLimit === size ? "selected" : ""} aria-pressed={parsedSampleLimit === size} onClick={() => setSampleLimit(String(size))} disabled={isPending || !status || size > status.testSamples}>{size} images</button>)}
+              <button type="button" className={parsedSampleLimit === 0 ? "selected" : ""} aria-pressed={parsedSampleLimit === 0} onClick={() => setSampleLimit("0")} disabled={isPending || !status}>Full split</button>
             </div>
-            <button className="run-button" onClick={runEvaluation} disabled={!status?.ready || isPending}>
+            <button className="run-button" onClick={runEvaluation} disabled={!status?.ready || isPending || Boolean(validationError)}>
               <span>{job.state === "starting" ? "Starting evaluation…" : job.state === "running" ? `Evaluating ${progress}%` : result ? "Run again" : "Evaluate final model"}</span><span aria-hidden="true">↗</span>
             </button>
             {isPending && <div className="progress-wrap"><div className="progress-status" aria-live="polite"><span>{job.state === "starting" ? `Contacting evaluation server · ${elapsedSeconds}s elapsed` : `Forward pass in progress · ${elapsedSeconds}s elapsed`}</span><b>{job.progress.done.toLocaleString()} / {job.progress.total.toLocaleString()} images</b></div><div className={job.state === "starting" ? "progress-track starting" : "progress-track"} role="progressbar" aria-label="Evaluation progress" aria-valuetext={job.state === "starting" ? "Starting evaluation" : `${progress}% complete`} aria-valuenow={job.state === "running" ? progress : undefined} aria-valuemin={0} aria-valuemax={100}><span style={job.state === "running" ? { width: `${progress}%` } : undefined} /></div></div>}

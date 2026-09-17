@@ -7,6 +7,7 @@ import random
 import threading
 import time
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -29,12 +30,39 @@ def select_evaluation_indices(indices, sample_limit):
     return indices if not sample_limit else random.sample(indices, sample_limit)
 
 
-def _checkpoint_info(path):
+def _load_checkpoint(path):
     try:
         state = torch.load(path, map_location="cpu", weights_only=True)
         stage = state.get("config", {}).get("stage")
         return state if stage in CLASSIFIER_STAGES and "model" in state else None
     except (OSError, RuntimeError, ValueError, TypeError):
+        return None
+
+
+@lru_cache(maxsize=128)
+def _cached_checkpoint_info(path, mtime_ns, ctime_ns, size):
+    state = _load_checkpoint(path)
+    if state is None:
+        return None
+    return {
+        "config": {
+            "stage": state["config"]["stage"],
+            "label_percent": state["config"].get("label_percent"),
+        },
+        "epoch": state.get("epoch"),
+        "score": state.get("score"),
+    }
+
+
+def _checkpoint_info(path):
+    if path is None:
+        return None
+    try:
+        path = Path(path).resolve()
+        stat = path.stat()
+        info = _cached_checkpoint_info(str(path), stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
+        return {**info, "config": dict(info["config"])} if info else None
+    except OSError:
         return None
 
 
@@ -68,13 +96,54 @@ class DashboardService:
         self.checkpoint_override = checkpoint_override or os.getenv("LE_SATCLR_CHECKPOINT")
         self._lock = threading.Lock()
         self._job = {"state": "idle", "progress": {"done": 0, "total": 0}}
+        self._cache_lock = threading.RLock()
+        self._split_cache = None
+        self._dataset_cache = None
+        self._model_cache = None
+
+    @staticmethod
+    def _file_version(path):
+        path = Path(path).resolve()
+        stat = path.stat()
+        return str(path), stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size
 
     def _test_indices(self):
-        data = json.loads(self.split_path.read_text(encoding="utf-8"))
-        indices = data.get("test")
-        if not isinstance(indices, list) or not indices or not all(isinstance(i, int) for i in indices):
-            raise ValueError("Saved split has no valid test indices")
-        return indices
+        with self._cache_lock:
+            version = self._file_version(self.split_path)
+            if self._split_cache is None or self._split_cache[0] != version:
+                data = json.loads(self.split_path.read_text(encoding="utf-8"))
+                indices = data.get("test")
+                if not isinstance(indices, list) or not indices or not all(type(i) is int and i >= 0 for i in indices):
+                    raise ValueError("Saved split has no valid test indices")
+                self._split_cache = version, tuple(indices), frozenset(indices)
+            return list(self._split_cache[1])
+
+    def _dataset(self):
+        with self._cache_lock:
+            root = self.data_root
+            if not (root / CLASSES[0]).is_dir():
+                root = root / "EuroSAT_RGB"
+            version = tuple(self._file_version(root / name) for name in CLASSES)
+            now = time.monotonic()
+            if (self._dataset_cache is None or self._dataset_cache[0] != version
+                    or now - self._dataset_cache[1] >= 5):
+                self._dataset_cache = version, now, catalog(self.data_root)
+            return self._dataset_cache[2]
+
+    def _classifier(self, checkpoint):
+        with self._cache_lock:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            version = self._file_version(checkpoint), str(device)
+            if self._model_cache is None or self._model_cache[0] != version:
+                self._model_cache = None
+                state = _load_checkpoint(checkpoint)
+                if not state:
+                    raise RuntimeError("No compatible classifier checkpoint")
+                model = Classifier(state["config"]["stage"] == "probe")
+                model.load_state_dict(state["model"], strict=True)
+                model.to(device).eval()
+                self._model_cache = version, model, device
+            return self._model_cache[1:]
 
     def status(self):
         checkpoint = discover_checkpoint(self.root, self.checkpoint_override, self.model_dirs)
@@ -141,9 +210,11 @@ class DashboardService:
         return None
 
     def test_image(self, index):
-        if index not in set(self._test_indices()):
-            raise PermissionError("Image is not in the saved test split")
-        dataset = catalog(self.data_root)
+        with self._cache_lock:
+            self._test_indices()
+            if index not in self._split_cache[2]:
+                raise PermissionError("Image is not in the saved test split")
+        dataset = self._dataset()
         if index < 0 or index >= len(dataset.samples):
             raise IndexError("Dataset index is out of range")
         return Path(dataset.samples[index][0])
@@ -189,20 +260,16 @@ class DashboardService:
 
     def _evaluate(self, sample_limit, checkpoint=None):
         started = time.monotonic()
-        dataset = catalog(self.data_root)
+        dataset = self._dataset()
         indices = self._test_indices()
         indices = select_evaluation_indices(indices, sample_limit)
         checkpoint = Path(checkpoint) if checkpoint else discover_checkpoint(
             self.root, self.checkpoint_override, self.model_dirs)
-        state = _checkpoint_info(checkpoint)
-        if not state:
+        if checkpoint is None:
             raise RuntimeError("No compatible classifier checkpoint")
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = Classifier(state["config"]["stage"] == "probe")
-        model.load_state_dict(state["model"], strict=True)
-        model.to(device).eval()
+        model, device = self._classifier(checkpoint)
         actual, predicted, confidence = [], [], []
-        with torch.no_grad():
+        with torch.inference_mode():
             for images, labels in loader(dataset, indices, 64):
                 logits = model(images.to(device, non_blocking=True))
                 if not torch.isfinite(logits).all():
