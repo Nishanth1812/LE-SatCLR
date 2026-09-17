@@ -2,9 +2,27 @@
 
 Label-efficient satellite land-cover classification. A ResNet-18 encoder is
 pretrained with SimCLR on unlabeled EuroSAT images, then evaluated against a
-from-scratch baseline at 1% and 10% label budgets. Measured results live in
-[RESULTS.md](RESULTS.md): fine-tuning beats scratch by +14.4pp at 1% labels
-and +5.6pp at 10%.
+from-scratch baseline at 1% and 10% label budgets.
+
+**Single-seed, transductive evaluation:** seed 42, standard augmentation,
+`ssl_scope=all`. SSL pretraining includes unlabeled validation and test images;
+these results do not establish inductive or out-of-distribution generalization.
+No multi-seed uncertainty estimates are available.
+
+## Measured results
+
+[RESULTS.md](RESULTS.md) records test accuracy of 78.59% at 1% labels and
+87.33% at 10% labels for SimCLR fine-tuning: +14.37pp and +5.59pp over scratch
+within this protocol.
+
+![Measured EuroSAT test accuracy at 1% and 10% label budgets for scratch, frozen probe, and fine-tuning; single seed 42, transductive ssl_scope=all.](docs/results.png)
+
+Regenerate the figure directly from the primary table in `RESULTS.md`, without
+images, checkpoints, or a Modal account:
+
+```powershell
+uv run --frozen python -m src.report --results-markdown RESULTS.md --figure docs/results.png
+```
 
 ## Setup
 
@@ -13,7 +31,13 @@ uv sync --frozen
 ```
 
 You need a Modal account for training (`modal setup`) and `Dataset/EuroSAT_RGB`
-with the 10 class folders for anything local.
+with the 10 class folders for local training or dataset evaluation. Regenerating
+the measured-results figure does not need the dataset.
+
+```powershell
+uv sync --frozen
+uv run --frozen python -m src.report --results-markdown RESULTS.md --figure docs/results.png
+```
 
 ## Training
 
